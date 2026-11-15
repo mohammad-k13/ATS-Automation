@@ -4,7 +4,7 @@ import cron from "node-cron";
 import { loadCriteria } from "./criteria.js";
 import { Db } from "./db.js";
 import { runOnce } from "./pipeline.js";
-import { KeywordScorer, LlmScorer, type Scorer } from "./score.js";
+import { anthropicComplete, KeywordScorer, LlmScorer, openAICompatComplete, type Scorer } from "./score.js";
 import { loadSources } from "./sources/index.js";
 import { HttpSource } from "./sources/http-source.js";
 import type { Source } from "./types.js";
@@ -23,8 +23,17 @@ const { values: flags, positionals } = parseArgs({
 const [cmd = "help", arg1, arg2] = positionals;
 
 function makeScorer(): Scorer {
-  if (!flags["no-llm"] && env.ANTHROPIC_API_KEY) return new LlmScorer(env.ANTHROPIC_API_KEY, env.ANTHROPIC_MODEL || "claude-sonnet-5-5");
-  console.log("ℹ Using keyword-only scoring (no ANTHROPIC_API_KEY or --no-llm).");
+  if (!flags["no-llm"]) {
+    const provider = (env.AI_PROVIDER || (env.OMNIROUTE_BASE_URL ? "omniroute" : env.ANTHROPIC_API_KEY ? "anthropic" : "")).toLowerCase();
+    if (provider === "omniroute") {
+      if (!env.OMNIROUTE_BASE_URL || !env.OMNIROUTE_MODEL) throw new Error("Set OMNIROUTE_BASE_URL and OMNIROUTE_MODEL in .env");
+      console.log(`ℹ Scoring with OmniRoute (${env.OMNIROUTE_MODEL})`);
+      return new LlmScorer(openAICompatComplete(env.OMNIROUTE_BASE_URL, env.OMNIROUTE_API_KEY ?? "", env.OMNIROUTE_MODEL));
+    }
+    if (provider === "anthropic" && env.ANTHROPIC_API_KEY)
+      return new LlmScorer(anthropicComplete(env.ANTHROPIC_API_KEY, env.ANTHROPIC_MODEL || "claude-sonnet-5-5"));
+  }
+  console.log("ℹ Using keyword-only scoring (no AI configured, or --no-llm).");
   return new KeywordScorer();
 }
 
@@ -105,6 +114,15 @@ async function main() {
       console.log("forgotten; next run will re-score");
       break;
 
+    case "test-ai": {
+      const sc = makeScorer();
+      const r = await sc.score({ source: "test", id: "1", name: "Test", jobTitle: "Backend Developer" },
+        "Backend developer, 4 years Node.js, TypeScript and PostgreSQL at an e-commerce company.",
+        { name: "test", match: {}, threshold: 70, mustHave: ["Node.js", "PostgreSQL"], niceToHave: ["Docker"], hardFilters: {} });
+      console.log(JSON.stringify(r, null, 2));
+      break;
+    }
+
     case "test-telegram":
       await makeNotifier(false).sendText("✅ ATS bot is connected.");
       console.log("sent");
@@ -117,6 +135,7 @@ async function main() {
   npm run ats -- probe NAME [page]                           Inspect an endpoint response + field mapping
   npm run ats -- list [--limit 30]                           Show processed applications
   npm run ats -- forget SOURCE [ID]                          Re-process an application (or whole source)
+  npm run ats -- test-ai                                     Score a sample resume with your AI setup
   npm run ats -- test-telegram                               Send a test message`);
   }
 }

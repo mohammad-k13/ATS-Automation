@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
+import { httpFetch } from "./http.js";
 import type { Application, Criteria, ScoreResult } from "./types.js";
 
 export interface Scorer {
@@ -78,11 +79,38 @@ Reply with ONE JSON object only, no prose, matching:
  "summary": "2-3 sentence English summary of the candidate and fit"}
 Scoring guide: 85+ strong hire-interview, 70-84 good, 50-69 partial, <50 poor. Missing any must-have usually caps the score at 65.`;
 
+/** Something that turns (system, user) into model text. */
+export type Complete = (system: string, user: string) => Promise<string>;
+
+export function anthropicComplete(apiKey: string, model: string): Complete {
+  const client = new Anthropic({ apiKey });
+  return async (system, user) => {
+    const msg = await client.messages.create({ model, max_tokens: 1500, system, messages: [{ role: "user", content: user }] });
+    return msg.content.map((b) => (b.type === "text" ? b.text : "")).join("");
+  };
+}
+
+/** Any OpenAI-compatible endpoint: OmniRoute, OpenRouter, LiteLLM, a local server... */
+export function openAICompatComplete(baseUrl: string, apiKey: string, model: string): Complete {
+  let base = baseUrl.replace(/\/+$/, "");
+  if (!/\/v\d+$/.test(base)) base += "/v1";
+  return async (system, user) => {
+    const res = await httpFetch(`${base}/chat/completions`, {
+      method: "POST",
+      headers: { "content-type": "application/json", ...(apiKey ? { authorization: `Bearer ${apiKey}` } : {}) },
+      body: JSON.stringify({ model, temperature: 0, max_tokens: 1500, messages: [{ role: "system", content: system }, { role: "user", content: user }] }),
+    }, undefined, 120_000);
+    const body = await res.text();
+    if (!res.ok) throw new Error(`AI router HTTP ${res.status} at ${base}/chat/completions: ${body.slice(0, 300)}`);
+    const json = JSON.parse(body);
+    const content = json.choices?.[0]?.message?.content;
+    if (typeof content !== "string") throw new Error(`AI router returned no message content: ${body.slice(0, 300)}`);
+    return content;
+  };
+}
+
 export class LlmScorer implements Scorer {
-  private client: Anthropic;
-  constructor(apiKey: string, private model: string) {
-    this.client = new Anthropic({ apiKey });
-  }
+  constructor(private complete: Complete) {}
 
   async score(app: Application, text: string, c: Criteria): Promise<ScoreResult> {
     const user = [
@@ -99,8 +127,7 @@ export class LlmScorer implements Scorer {
 
     let lastErr: unknown;
     for (let attempt = 0; attempt < 2; attempt++) {
-      const msg = await this.client.messages.create({ model: this.model, max_tokens: 1500, system: SYSTEM, messages: [{ role: "user", content: user }] });
-      const raw = msg.content.map((b) => (b.type === "text" ? b.text : "")).join("");
+      const raw = await this.complete(SYSTEM, user);
       const json = raw.slice(raw.indexOf("{"), raw.lastIndexOf("}") + 1);
       try {
         const r = LlmResult.parse(JSON.parse(json));
@@ -120,6 +147,6 @@ export class LlmScorer implements Scorer {
         lastErr = e;
       }
     }
-    throw new Error(`LLM returned invalid JSON: ${String(lastErr)}`);
+    throw new Error(`AI returned invalid JSON: ${String(lastErr)}`);
   }
 }

@@ -14,7 +14,7 @@ copy sources.example.yaml sources.yaml
 2. **Map fields** - run `npm run probe -- jobinja`. It prints the raw JSON and the mapped result; adjust `itemsPath` and `fields` (dotted paths) until name/job/resume URL look right.
 3. **Criteria** - one YAML per job in `criteria/` (see `backend-developer.example.yaml`): must-have, nice-to-have, hard filters, threshold, free-text instructions. `default.yaml` is used when no job-specific file matches.
 4. **Telegram** - create a bot with @BotFather, add it to your private group/chat, put `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` in `.env`, then `npm run ats -- test-telegram`. If the machine is in Iran, set `TELEGRAM_PROXY` (e.g. your local v2ray HTTP proxy `http://127.0.0.1:10809`).
-5. **Claude API** - set `ANTHROPIC_API_KEY`. Without it, keyword-only scoring is used.
+5. **AI** - OmniRoute: set `OMNIROUTE_BASE_URL`, `OMNIROUTE_API_KEY`, `OMNIROUTE_MODEL` and check with `npm run ats -- test-ai`. Or `AI_PROVIDER=anthropic` + `ANTHROPIC_API_KEY`. Without AI, keyword-only scoring is used.
 
 ## Jobvision (built in)
 1. Log in to employer.jobvision.ir, open DevTools > Network, click any request to `employerapi.jobvision.ir`, copy the **Authorization** header value into `.env` as `JOBVISION_TOKEN`.
