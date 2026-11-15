@@ -105,6 +105,10 @@ export class JobvisionSource implements Source {
 
   private checkToken() {
     if (!this.token) throw new AuthError(`${this.name}: JOBVISION_TOKEN is empty. Copy the Authorization header (without "Bearer ") from DevTools into .env`);
+    if (/[^\x21-\x7e]/.test(this.token))
+      throw new AuthError(`${this.name}: JOBVISION_TOKEN contains invalid characters (e.g. "…" or spaces) - it was copied truncated. In DevTools turn on "Raw" for the request headers and copy the full Authorization value.`);
+    if (this.token.split(".").length !== 3)
+      throw new AuthError(`${this.name}: JOBVISION_TOKEN does not look like a full token (expected 3 parts separated by dots). Copy the full Authorization value again.`);
     const exp = jwtExpiry(this.token);
     if (exp && exp.getTime() < Date.now() + 60_000)
       throw new AuthError(`${this.name}: token expired at ${exp.toISOString()}. Log in to employer.jobvision.ir and paste a fresh token into .env`);
