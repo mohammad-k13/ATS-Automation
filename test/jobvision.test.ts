@@ -34,7 +34,7 @@ const calls: string[] = [];
 function server() {
   return http.createServer((q, r) => {
     calls.push(`${q.method} ${q.url}`);
-    if (q.headers.authorization !== "Bearer good") { r.writeHead(401); return r.end(); }
+    if (q.headers.authorization !== "Bearer aaa.bbb.ccc") { r.writeHead(401); return r.end(); }
     r.setHeader("content-type", "application/json");
     const u = q.url ?? "";
     if (u.startsWith("/api/jobpost/GetJobHeaderData")) return r.end(ok({ jobPostTitle: "مدیر تولید" }));
@@ -69,7 +69,7 @@ test("jobvision end to end against mock API: read-only, accepts, attaches PDF, d
   const srv = server();
   await new Promise<void>((r) => srv.listen(PORT, r));
   try {
-    const src = new JobvisionSource(cfg("Bearer good"));
+    const src = new JobvisionSource(cfg("Bearer aaa.bbb.ccc"));
     const sent: { name: string; file?: string }[] = [];
     const notifier: Notifier = { sendAccepted: async (a, _r, f) => void sent.push({ name: a.name, file: f?.filename }), sendText: async () => {} };
     const crit = { name: "prod", match: { jobIds: ["1"] }, threshold: 60, mustHave: ["MSP", "ERP"], niceToHave: ["Excel"], hardFilters: {} };
@@ -85,7 +85,7 @@ test("jobvision end to end against mock API: read-only, accepts, attaches PDF, d
     await runOnce(opts);
     assert.equal(sent.length, 1, "nothing re-sent");
 
-    const bad = await runOnce({ ...opts, sources: [new JobvisionSource(cfg("bad"))], db: new Db(":memory:") });
+    const bad = await runOnce({ ...opts, sources: [new JobvisionSource(cfg("xxx.yyy.zzz"))], db: new Db(":memory:") });
     assert.match(bad.errors[0].error, /401/);
   } finally {
     srv.close();
