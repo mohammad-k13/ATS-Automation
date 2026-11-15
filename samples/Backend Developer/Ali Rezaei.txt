@@ -1,0 +1,7 @@
+Ali Rezaei - Senior Backend Engineer - Tehran
+Summary: 5 years building production backend services with Node.js and TypeScript.
+Experience:
+- Digikala (2021-2024): Backend Engineer. Built REST API services in NestJS + PostgreSQL serving 2M users. Docker, Redis caching, CI/CD with GitLab.
+- Snapp (2019-2021): Junior Backend Developer. Node.js microservices, PostgreSQL, Kubernetes deployments.
+Education: B.Sc. Computer Engineering, Amirkabir University.
+Languages: Persian (native), English (fluent).

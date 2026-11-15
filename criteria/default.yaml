@@ -1,0 +1,9 @@
+# Used when no other criteria file matches the job. Delete it if you prefer unmatched jobs to be skipped.
+name: default
+threshold: 70
+mustHave: []
+niceToHave: []
+hardFilters: {}
+instructions: |
+  General screening: reward relevant experience for the job title, clear measurable achievements,
+  and stable employment history. Penalize resumes unrelated to the job title.
