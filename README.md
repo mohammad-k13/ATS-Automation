@@ -16,6 +16,14 @@ copy sources.example.yaml sources.yaml
 4. **Telegram** - create a bot with @BotFather, add it to your private group/chat, put `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` in `.env`, then `npm run ats -- test-telegram`. If the machine is in Iran, set `TELEGRAM_PROXY` (e.g. your local v2ray HTTP proxy `http://127.0.0.1:10809`).
 5. **Claude API** - set `ANTHROPIC_API_KEY`. Without it, keyword-only scoring is used.
 
+## Jobvision (built in)
+1. Log in to employer.jobvision.ir, open DevTools > Network, click any request to `employerapi.jobvision.ir`, copy the **Authorization** header value into `.env` as `JOBVISION_TOKEN`.
+2. In `sources.yaml` set `jobPostIds` (the number in `employer.jobvision.ir/jobs/<ID>/applications`).
+3. `npm run probe -- jobvision` shows the applicants and the resume text the scorer sees.
+- Read-only: it never calls `ViewCvFor3Seconds` or changes statuses, so applicants are not marked as seen.
+- Only applicants in status 10 (undecided) are pulled. The token expires after ~6 hours (you get a 🔐 alert).
+- **Jobvision blocks non-Iranian IPs** - run it from a machine in Iran (your PC or an Iranian VPS) and use `TELEGRAM_PROXY` for Telegram.
+
 ## Usage
 ```bash
 npm run dry                         # fetch + score, print what would be sent, save nothing

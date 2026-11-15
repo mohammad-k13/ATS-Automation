@@ -55,7 +55,7 @@ export async function runOnce(o: RunOptions): Promise<RunSummary> {
       }
       try {
         let file: ResumeFile | null = null;
-        let text = app.resumeText ?? "";
+        let text = app.resumeText ?? (src.getResumeText ? await src.getResumeText(app) : "");
         if (!text) {
           file = await src.downloadResume(app);
           if (!file) throw new Error("no resume URL/text for this application");
@@ -70,6 +70,8 @@ export async function runOnce(o: RunOptions): Promise<RunSummary> {
         let notified = false;
         if (r.pass) {
           sum.accepted.push({ app, score: r.score });
+          // attach the original file (e.g. uploaded PDF) when we scored from structured text
+          if (!file && app.resumeUrl) file = await src.downloadResume(app).catch((e) => (log(`    (could not attach file: ${e.message})`), null));
           await o.notifier.sendAccepted(app, r, file);
           notified = true;
         } else {

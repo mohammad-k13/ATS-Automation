@@ -1,0 +1,15 @@
+# Example for Jobvision job post 1606152 (مدیر تولید). Rename to production-manager.yaml and edit.
+name: production-manager
+match:
+  jobIds: ["1606152"]
+threshold: 70
+mustHave: ["مدیریت تولید", "برنامه ریزی تولید", "کنترل کیفیت"]
+niceToHave: ["ERP", "MSP", "ISO", "نت", "Lean", "Excel"]
+hardFilters:
+  minYears: 5
+instructions: |
+  Production manager for a manufacturing plant in Isfahan.
+  Prefer candidates with hands-on production/plant management in industrial companies (not only office roles).
+  Candidates living in Isfahan province or willing to relocate are preferred.
+  Military service must be completed or exempt if stated.
+  Jobvision's own matchingScore is in APPLICATION DATA - use it as a weak hint only.

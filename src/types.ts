@@ -24,6 +24,8 @@ export interface Source {
   name: string;
   listApplications(): Promise<Application[]>;
   downloadResume(app: Application): Promise<ResumeFile | null>;
+  /** Optional: source can return resume text directly (structured CV) instead of a file. */
+  getResumeText?(app: Application): Promise<string>;
 }
 
 export interface Criteria {

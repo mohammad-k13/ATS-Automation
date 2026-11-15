@@ -31,27 +31,16 @@ sources:
     # resumeUrlTemplate: "/REPLACE/applications/{id}/resume"
     # profileUrlTemplate: "https://jobinja.ir/REPLACE/applications/{id}"
 
+  # Jobvision employer panel - built-in flow, just set the token and your job post ids.
+  # Job post id is in the panel URL: employer.jobvision.ir/jobs/<ID>/applications
   - name: jobvision
-    type: http
-    enabled: false
-    baseUrl: https://employer.jobvision.ir
-    headers:
-      Cookie: "${JOBVISION_COOKIE}"
-      Authorization: "${JOBVISION_TOKEN}"
-      Accept: application/json
-      User-Agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130 Safari/537.36"
-    list:
-      url: "/REPLACE/with/the/applications/endpoint"
-      method: POST
-      body: { pageIndex: "{page}", pageSize: 20 }
-      itemsPath: data.items
-      maxPages: 3
-    fields:
-      id: id
-      name: fullName
-      jobId: jobPostId
-      jobTitle: jobTitle
-      resumeUrl: resumeFileUrl
+    type: jobvision
+    enabled: true
+    token: "${JOBVISION_TOKEN}"   # Authorization header value from DevTools (expires every ~6h)
+    jobPostIds: [1606152]
+    status: 10                    # 10 = undecided applicants only
+    maxPerJob: 200
+    delayMs: 1200
 
   # Local test source: samples/<job title>/<resume>.pdf|docx|txt
   - name: samples

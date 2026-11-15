@@ -5,8 +5,9 @@ import type { Source } from "../types.js";
 import { interpolate } from "../util.js";
 import { FolderSource, FolderSourceConfig } from "./folder-source.js";
 import { HttpSource, HttpSourceConfig } from "./http-source.js";
+import { JobvisionSource, JobvisionSourceConfig } from "./jobvision-source.js";
 
-const SourcesFile = z.object({ sources: z.array(z.discriminatedUnion("type", [HttpSourceConfig, FolderSourceConfig])) });
+const SourcesFile = z.object({ sources: z.array(z.discriminatedUnion("type", [HttpSourceConfig, FolderSourceConfig, JobvisionSourceConfig])) });
 
 export function loadSources(file: string, only?: string): Source[] {
   if (!fs.existsSync(file)) throw new Error(`${file} not found. Copy sources.example.yaml to ${file} and fill in your endpoint.`);
@@ -15,7 +16,9 @@ export function loadSources(file: string, only?: string): Source[] {
   return parsed.data.sources
     .filter((s) => (only ? s.name === only : s.enabled))
     .map((s) => {
-      if (s.type === "http") return new HttpSource({ ...s, proxy: s.proxy || process.env.SOURCE_PROXY || undefined });
+      const proxy = s.type !== "folder" ? s.proxy || process.env.SOURCE_PROXY || undefined : undefined;
+      if (s.type === "http") return new HttpSource({ ...s, proxy });
+      if (s.type === "jobvision") return new JobvisionSource({ ...s, proxy });
       return new FolderSource(s);
     });
 }

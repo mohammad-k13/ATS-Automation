@@ -7,6 +7,7 @@ import { runOnce } from "./pipeline.js";
 import { KeywordScorer, LlmScorer, type Scorer } from "./score.js";
 import { loadSources } from "./sources/index.js";
 import { HttpSource } from "./sources/http-source.js";
+import type { Source } from "./types.js";
 import { ConsoleNotifier, TelegramNotifier, type Notifier } from "./telegram.js";
 
 const env = process.env;
@@ -78,16 +79,19 @@ async function main() {
     }
 
     case "probe": {
-      // Show raw response + how items map, to help fill sources.yaml.
+      // Show what a source returns, to check config/field mapping. Read-only.
       const name = arg1 ?? flags.source;
-      const [src] = loadSources(env.SOURCES_FILE || "sources.yaml", name);
+      const [src]: Source[] = loadSources(env.SOURCES_FILE || "sources.yaml", name);
       if (!src) throw new Error(`No source named "${name}" in sources.yaml`);
-      if (!(src instanceof HttpSource)) throw new Error("probe only works for http sources");
-      const json = await src.fetchPage(Number(arg2 ?? 1));
-      console.log("=== RAW (first 3000 chars) ===\n" + JSON.stringify(json, null, 2).slice(0, 3000));
+      if (src instanceof HttpSource) {
+        const json = await src.fetchPage(Number(arg2 ?? 1));
+        console.log("=== RAW (first 3000 chars) ===\n" + JSON.stringify(json, null, 2).slice(0, 3000));
+      }
       const apps = await src.listApplications();
-      console.log(`\n=== MAPPED: ${apps.length} item(s), first 3 ===`);
+      console.log(`\n=== ${apps.length} application(s), first 3 ===`);
       console.log(JSON.stringify(apps.slice(0, 3).map(({ raw, ...a }) => a), null, 2));
+      const getText = (src as Source).getResumeText?.bind(src);
+      if (apps[0] && getText) console.log(`\n=== Resume text of "${apps[0].name}" (what the scorer sees) ===\n` + (await getText(apps[0])));
       break;
     }
 
