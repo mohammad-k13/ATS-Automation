@@ -15,7 +15,8 @@
     "schedule": "tsx src/cli.ts schedule",
     "build": "tsc",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test test/*.test.ts"
+    "test": "tsx --test test/*.test.ts",
+    "dashboard": "tsx src/server.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.8.0",

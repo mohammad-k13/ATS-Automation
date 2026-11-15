@@ -20,7 +20,8 @@ export const JobvisionSourceConfig = z.object({
   type: z.literal("jobvision"),
   enabled: z.boolean().default(true),
   token: z.string(),
-  jobPostIds: z.array(z.coerce.number()).min(1),
+  /** Jobs to pull in CLI/scheduled runs. The dashboard picks jobs itself, so this can be empty there. */
+  jobPostIds: z.array(z.coerce.number()).default([]),
   /** 10 = undecided (تعیین وضعیت نشده). Others from BaseData/GetListOfApplicationStatuses. */
   status: z.number().default(10),
   maxPerJob: z.number().default(200),
@@ -93,10 +94,22 @@ export function cvToText(d: any): string {
   return L.join("\n");
 }
 
+export interface JobPost {
+  id: string;
+  title: string;
+  city: string | null;
+  status: string | null;
+  expireDate: string | null;
+  timeDescription: string | null;
+  submitter: string | null;
+}
+
 export class JobvisionSource implements Source {
   name: string;
   private token: string;
   private titles = new Map<number, string>();
+  /** If set, overrides cfg.jobPostIds for the next listApplications() (used by the dashboard). */
+  onlyJobs?: number[];
 
   constructor(private cfg: JobvisionSourceConfig) {
     this.name = cfg.name;
@@ -145,7 +158,9 @@ export class JobvisionSource implements Source {
   async listApplications(): Promise<Application[]> {
     this.checkToken();
     const out: Application[] = [];
-    for (const jobPostId of this.cfg.jobPostIds) {
+    const jobIds = this.onlyJobs ?? this.cfg.jobPostIds;
+    if (!jobIds.length) throw new Error(`${this.name}: no jobPostIds configured`);
+    for (const jobPostId of jobIds) {
       const header = await this.api("GET", `/jobpost/GetJobHeaderData?jobPostId=${jobPostId}`);
       const jobTitle = t(header?.jobPostTitle) || `Job ${jobPostId}`;
       this.titles.set(jobPostId, jobTitle);
@@ -159,6 +174,29 @@ export class JobvisionSource implements Source {
       }
     }
     return out;
+  }
+
+  /** Active job posts (statusId 1) from the employer panel. */
+  async listJobs(statusId = 1): Promise<JobPost[]> {
+    this.checkToken();
+    const out: JobPost[] = [];
+    for (let page = 1; page <= 20; page++) {
+      const data = await this.api("POST", "/JobPost/GetListOfJobPosts", { statusId, keyword: "", pageNumber: page, pageSize: 50 });
+      const items: any[] = data?.listOfJobPostSummaries ?? [];
+      for (const j of items)
+        out.push({
+          id: String(j.id), title: t(j.title), city: t(j.cityName) || null, status: t(j.status) || null,
+          expireDate: j.expireDate ?? null, timeDescription: t(j.timeDescription) || null, submitter: t(j.fullName) || null,
+        });
+      if (items.length < 50) break;
+    }
+    return out;
+  }
+
+  /** Counters shown in the panel for one job (new, undecided, rejected, total). */
+  async jobCounts(jobPostId: string): Promise<{ total: number; undecided: number; rejected: number; newCount: number }> {
+    const d = await this.api("GET", `/JobPostApplication/GetApplicationManagementHeader?jobPostId=${jobPostId}`);
+    return { total: d?.totalCount ?? 0, undecided: d?.unsetStatusCount ?? 0, rejected: d?.rejectedCount ?? 0, newCount: d?.newResumeCount ?? 0 };
   }
 
   mapSummary(s: any, jobPostId: number, jobTitle: string): Application {

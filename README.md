@@ -24,6 +24,12 @@ copy sources.example.yaml sources.yaml
 - Only applicants in status 10 (undecided) are pulled. The token expires after ~6 hours (you get a 🔐 alert).
 - **Jobvision blocks non-Iranian IPs** - run it from a machine in Iran (your PC or an Iranian VPS) and use `TELEGRAM_PROXY` for Telegram.
 
+## Dashboard
+```bash
+npm run dashboard
+```
+Open http://localhost:3000. Jobs are loaded live from your Jobvision panel; press **Score resumes** on a job. Paste a fresh token with **Update token** when it expires (saved to `.env`).
+
 ## Usage
 ```bash
 npm run dry                         # fetch + score, print what would be sent, save nothing

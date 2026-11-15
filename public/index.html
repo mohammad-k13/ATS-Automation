@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ATS Dashboard</title>
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">ATS <span>Dashboard</span></div>
+    <div class="top-right">
+      <span id="ai-badge" class="badge"></span>
+    </div>
+  </header>
+  <div class="layout">
+    <nav class="sidebar">
+      <div class="side-title">Platforms</div>
+      <div id="platforms"></div>
+    </nav>
+    <main id="view"><div class="muted pad">Loading…</div></main>
+  </div>
+
+  <dialog id="token-dialog">
+    <form method="dialog" id="token-form">
+      <h3>Update <span id="token-src"></span> token</h3>
+      <ol class="help">
+        <li>Log in to the employer panel, press <b>F12</b> → <b>Network</b>.</li>
+        <li>Click any request to <code>employerapi.jobvision.ir</code> → <b>Headers</b> → turn on <b>Raw</b>.</li>
+        <li>Copy the full <b>Authorization</b> value and paste it here.</li>
+      </ol>
+      <textarea id="token-input" rows="5" placeholder="Bearer eyJ..."></textarea>
+      <div id="token-error" class="error"></div>
+      <div class="row end">
+        <button value="cancel" formnovalidate class="ghost">Cancel</button>
+        <button id="token-save" value="default" class="primary">Save token</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="/app.js"></script>
+</body>
+</html>

@@ -16,6 +16,7 @@ export interface RunOptions {
   dryRun?: boolean;
   digest?: boolean;
   log?: (s: string) => void;
+  onProgress?: (done: number, total: number) => void;
 }
 
 export interface RunSummary {
@@ -42,7 +43,9 @@ export async function runOnce(o: RunOptions): Promise<RunSummary> {
     }
     log(`${src.name}: ${apps.length} application(s) listed`);
 
+    let done = 0;
     for (const app of apps) {
+      o.onProgress?.(done++, apps.length);
       if (o.db.isDone(app.source, app.id)) {
         sum.skipped++;
         continue;
@@ -78,12 +81,12 @@ export async function runOnce(o: RunOptions): Promise<RunSummary> {
           sum.rejected.push({ app, score: r.score, reason });
         }
         if (!o.dryRun)
-          o.db.save({ source: app.source, id: app.id, name: app.name, job: app.jobTitle, decision: r.pass ? "accepted" : "rejected", score: r.score, result: r, notified });
+          o.db.save({ ...rowFields(app, text), decision: r.pass ? "accepted" : "rejected", score: r.score, result: r, notified });
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
         log(`  ✖ ${app.name}: ${msg}`);
         sum.errors.push({ app, source: src.name, error: msg });
-        if (!o.dryRun) o.db.save({ source: app.source, id: app.id, name: app.name, job: app.jobTitle, decision: "error", error: msg });
+        if (!o.dryRun) o.db.save({ ...rowFields(app), decision: "error", error: msg });
         if (e instanceof AuthError) break;
       }
     }
@@ -92,6 +95,13 @@ export async function runOnce(o: RunOptions): Promise<RunSummary> {
   if (o.digest && (sum.rejected.length || sum.errors.length)) await o.notifier.sendText(formatDigest(sum)).catch((e) => log(`digest failed: ${e}`));
   log(`Done: ${sum.accepted.length} accepted, ${sum.rejected.length} rejected, ${sum.errors.length} errors, ${sum.skipped} skipped`);
   return sum;
+}
+
+function rowFields(app: Application, resumeText?: string) {
+  return {
+    source: app.source, id: app.id, name: app.name, job: app.jobTitle, jobId: app.jobId, resumeText,
+    extra: app.extra, profileUrl: app.profileUrl, resumeUrl: app.resumeUrl, appliedAt: app.appliedAt,
+  };
 }
 
 export function formatDigest(s: RunSummary): string {
