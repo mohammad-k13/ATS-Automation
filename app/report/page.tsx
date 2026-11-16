@@ -11,7 +11,14 @@ const COLS: [keyof Row, string][] = [
   ["unit", "نام واحد"], ["jobTitle", "عنوان شغلی"], ["resumeType", "نوع رزومه"], ["score", "امتیاز"],
 ];
 const faDigits = (s: string) => s.replace(/\d/g, (d) => "۰۱۲۳۴۵۶۷۸۹"[Number(d)]);
-const faDay = (s: string | null) => (s ? new Date(s).toLocaleDateString("fa-IR", { year: "numeric", month: "long", day: "numeric" }) : "-");
+/** Jalali date as yyyy/mm/dd, e.g. 1405/08/25 (Latin digits, also in Excel so it sorts and filters well). */
+const jalali = (s: string | null) => {
+  if (!s) return "-";
+  const p = new Intl.DateTimeFormat("en-US-u-ca-persian", { year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(new Date(s));
+  const get = (t: string) => p.find((x) => x.type === t)?.value ?? "";
+  return `${get("year").replace(/\D/g, "")}/${get("month")}/${get("day")}`;
+};
+const faDay = jalali;
 const cell = (r: Row, k: keyof Row) =>
   k === "receivedAt" ? faDay(r.receivedAt)
   : k === "phone" ? (r.phone ? faDigits(r.phone) : "-")
@@ -61,7 +68,7 @@ function ReportView() {
           </div>
           <div className="report-date">
             <div>تاریخ گزارش</div>
-            <b>{faDay(rep.generatedAt)}</b>
+            <b className="ltr">{faDay(rep.generatedAt)}</b>
           </div>
         </header>
 
@@ -74,7 +81,7 @@ function ReportView() {
               {rep.rows.map((r, i) => (
                 <tr key={i}>
                   <td className="num">{(i + 1).toLocaleString("fa-IR")}</td>
-                  {COLS.map(([k]) => <td key={k} className={k === "name" ? "strong" : k === "phone" ? "nowrap" : k === "score" ? `score-cell ${r.status === "قبول" ? "ok" : r.status === "تایید نسبی" ? "partial" : r.status === "رد" ? "bad" : ""}` : ""}>{cell(r, k)}</td>)}
+                  {COLS.map(([k]) => <td key={k} className={k === "name" ? "strong" : k === "phone" || k === "receivedAt" ? "nowrap" : k === "score" ? `score-cell ${r.status === "قبول" ? "ok" : r.status === "تایید نسبی" ? "partial" : r.status === "رد" ? "bad" : ""}` : ""}>{cell(r, k)}</td>)}
                 </tr>
               ))}
             </tbody>
