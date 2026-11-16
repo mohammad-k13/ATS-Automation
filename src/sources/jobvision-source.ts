@@ -29,6 +29,8 @@ export const JobvisionSourceConfig = z.object({
   apiBase: z.string().default("https://employerapi.jobvision.ir/api/v1.0"),
   fileBase: z.string().default("https://fileapi.jobvision.ir/api/v1.0"),
   panelBase: z.string().default("https://employer.jobvision.ir"),
+  /** Public job page, {id} = job post id. Used to read the published ad text. */
+  publicJobUrl: z.string().default("https://jobvision.ir/jobs/{id}"),
   proxy: z.string().optional(),
 });
 export type JobvisionSourceConfig = z.infer<typeof JobvisionSourceConfig>;
@@ -102,6 +104,41 @@ export interface JobPost {
   expireDate: string | null;
   timeDescription: string | null;
   submitter: string | null;
+}
+
+const stripHtml = (h: string) =>
+  h
+    .replace(/<\s*(br|\/p|\/li|\/h\d|\/div)\s*\/?>/gi, "\n")
+    .replace(/<li[^>]*>/gi, "• ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n)))
+    .replace(/[ \t]+/g, " ")
+    .replace(/\n\s*\n+/g, "\n")
+    .trim();
+
+/** Pull the job ad out of a public job page (JSON-LD JobPosting first). */
+export function extractJobAd(html: string): string {
+  for (const m of html.matchAll(/<script[^>]+application\/ld\+json[^>]*>([\s\S]*?)<\/script>/gi)) {
+    try {
+      const data = JSON.parse(m[1]);
+      const items = Array.isArray(data) ? data : data["@graph"] ?? [data];
+      const jp = items.find((x: any) => String(x?.["@type"]).includes("JobPosting"));
+      if (jp?.description) {
+        const parts = [
+          jp.title && `عنوان: ${jp.title}`,
+          jp.hiringOrganization?.name && `شرکت: ${jp.hiringOrganization.name}`,
+          jp.employmentType && `نوع همکاری: ${[].concat(jp.employmentType).join("، ")}`,
+          stripHtml(String(jp.description)),
+        ];
+        return parts.filter(Boolean).join("\n");
+      }
+    } catch {
+      /* ignore broken JSON-LD */
+    }
+  }
+  const meta = html.match(/<meta[^>]+(?:name|property)=["'](?:og:)?description["'][^>]+content=["']([^"']+)/i)?.[1];
+  if (meta && meta.length > 120) return stripHtml(meta);
+  throw new Error("متن آگهی در صفحهٔ عمومی پیدا نشد");
 }
 
 export class JobvisionSource implements Source {
@@ -197,6 +234,17 @@ export class JobvisionSource implements Source {
   async jobCounts(jobPostId: string): Promise<{ total: number; undecided: number; rejected: number; newCount: number }> {
     const d = await this.api("GET", `/JobPostApplication/GetApplicationManagementHeader?jobPostId=${jobPostId}`);
     return { total: d?.totalCount ?? 0, undecided: d?.unsetStatusCount ?? 0, rejected: d?.rejectedCount ?? 0, newCount: d?.newResumeCount ?? 0 };
+  }
+
+  /**
+   * Text of the published job ad. Reads the public job page and takes the JobPosting JSON-LD
+   * (what search engines read), falling back to the page's meta description / visible text.
+   */
+  async getJobAd(jobPostId: string): Promise<string> {
+    const url = this.cfg.publicJobUrl.replace("{id}", encodeURIComponent(jobPostId));
+    const res = await httpFetch(url, { headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130 Safari/537.36", "Accept-Language": "fa,en;q=0.8" } }, this.cfg.proxy);
+    if (!res.ok) throw new Error(`HTTP ${res.status} from ${url}`);
+    return extractJobAd(await res.text());
   }
 
   mapSummary(s: any, jobPostId: number, jobTitle: string): Application {

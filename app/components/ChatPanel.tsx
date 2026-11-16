@@ -60,7 +60,7 @@ export default function ChatPanel({ src, jobId, focusIds, pending, onPendingUsed
       <div className="chat-msgs" ref={box}>
         {!msgs.length && (
           <div className="stack">
-            <div className="small muted">مثلاً بپرسید چرا یک نفر رد شده، چند نفر را مقایسه کنید یا بخواهید سؤالات مصاحبه پیشنهاد دهد. برای بررسی دقیق‌تر، رزومه‌ها را در جدول انتخاب کنید یا نام فرد را بنویسید.</div>
+            <div className="small muted">دستیار متن آگهی، توضیحات شما، شرایط غربالگری و خلاصهٔ همهٔ رزومه‌ها را از قبل می‌داند. مستقیم بپرسید؛ مثلاً چرا یک نفر رد شده یا چند نفر را مقایسه کنید. برای بررسی رزومهٔ کامل، آن را در جدول انتخاب کنید یا نام فرد را بنویسید.</div>
             <div className="suggest">{SUGGEST.map((s) => <button key={s} onClick={() => send(s)}>{s}</button>)}</div>
           </div>
         )}

@@ -60,6 +60,8 @@ export class Db {
     for (const [col, type] of Object.entries(EXTRA_COLUMNS)) if (!have.has(col)) this.db.exec(`ALTER TABLE applications ADD COLUMN ${col} ${type}`);
     this.db.exec(`CREATE TABLE IF NOT EXISTS jobs_meta (
       source TEXT NOT NULL, job_id TEXT NOT NULL, unit TEXT, PRIMARY KEY (source, job_id))`);
+    const metaCols = new Set((this.db.prepare("PRAGMA table_info(jobs_meta)").all() as any[]).map((c) => c.name));
+    for (const col of ["title", "description", "ad_text", "ad_fetched_at"]) if (!metaCols.has(col)) this.db.exec(`ALTER TABLE jobs_meta ADD COLUMN ${col} TEXT`);
     this.db.exec(`CREATE TABLE IF NOT EXISTS chats (
       source TEXT NOT NULL, job_id TEXT NOT NULL, messages_json TEXT NOT NULL, updated_at TEXT NOT NULL,
       PRIMARY KEY (source, job_id))`);
@@ -76,6 +78,16 @@ export class Db {
            applied_at=excluded.applied_at, phone=COALESCE(excluded.phone, phone)`,
       )
       .run(a.source, a.id, a.name, a.job ?? null, a.jobId ?? null, new Date().toISOString(), a.extra ? JSON.stringify(a.extra) : null, a.profileUrl ?? null, a.resumeUrl ?? null, a.appliedAt ?? null, a.phone ?? null);
+  }
+
+  getJobMeta(source: string, jobId: string): { unit: string; title: string; description: string; adText: string; adFetchedAt: string | null } {
+    const r = this.db.prepare("SELECT * FROM jobs_meta WHERE source=? AND job_id=?").get(source, jobId) as any;
+    return { unit: r?.unit ?? "", title: r?.title ?? "", description: r?.description ?? "", adText: r?.ad_text ?? "", adFetchedAt: r?.ad_fetched_at ?? null };
+  }
+  /** Update some job meta fields (unit, title, description, ad_text, ad_fetched_at). */
+  setJobMeta(source: string, jobId: string, fields: Partial<Record<"unit" | "title" | "description" | "ad_text" | "ad_fetched_at", string>>) {
+    this.db.prepare("INSERT INTO jobs_meta (source,job_id) VALUES (?,?) ON CONFLICT(source,job_id) DO NOTHING").run(source, jobId);
+    for (const [k, v] of Object.entries(fields)) this.db.prepare(`UPDATE jobs_meta SET ${k}=? WHERE source=? AND job_id=?`).run(v ?? "", source, jobId);
   }
 
   getUnit(source: string, jobId: string): string {

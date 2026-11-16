@@ -49,7 +49,7 @@ function server() {
 
 const cfg = (token: string) => ({
   name: "jobvision", type: "jobvision" as const, enabled: true, token, jobPostIds: [1], status: 10, maxPerJob: 200, delayMs: 0,
-  apiBase: `http://127.0.0.1:${PORT}/api`, fileBase: `http://127.0.0.1:${PORT}`, panelBase: "https://employer.jobvision.ir",
+  apiBase: `http://127.0.0.1:${PORT}/api`, fileBase: `http://127.0.0.1:${PORT}`, panelBase: "https://employer.jobvision.ir", publicJobUrl: `http://127.0.0.1:${PORT}/jobs/{id}`,
 });
 
 test("cvToText excludes gender, age, marital status and contact info", () => {
@@ -90,4 +90,19 @@ test("jobvision end to end against mock API: read-only, accepts, attaches PDF, d
   } finally {
     srv.close();
   }
+});
+
+test("extractJobAd reads JobPosting JSON-LD and falls back to meta description", async () => {
+  const { extractJobAd } = await import("../src/sources/jobvision-source");
+  const html = `<html><head><script type="application/ld+json">${JSON.stringify({
+    "@context": "https://schema.org", "@type": "JobPosting", title: "مدیر تولید", hiringOrganization: { name: "شرکت نمونه" },
+    description: "<p>شرح وظایف:</p><ul><li>برنامه‌ریزی تولید</li><li>کنترل کیفیت</li></ul>",
+  })}</script></head></html>`;
+  const t = extractJobAd(html);
+  assert.match(t, /عنوان: مدیر تولید/);
+  assert.match(t, /• برنامه‌ریزی تولید/);
+  assert.ok(!t.includes("<li>"));
+  const meta = `<meta name="description" content="${"آگهی استخدام مدیر تولید با سابقه در صنعت ".repeat(5)}">`;
+  assert.match(extractJobAd(meta), /آگهی استخدام مدیر تولید/);
+  assert.throws(() => extractJobAd("<html></html>"));
 });

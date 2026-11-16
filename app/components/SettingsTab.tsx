@@ -9,7 +9,7 @@ interface Criteria {
   hardFilters: { minYears: number | null; requireAny: string[]; rejectIfAny: string[] };
   instructions: string;
 }
-interface Settings { criteria: Criteria | null; criteriaKind: string; criteriaName: string | null; scheduled: boolean; sourceStatus: number; unit: string }
+interface Settings { criteria: Criteria | null; criteriaKind: string; criteriaName: string | null; scheduled: boolean; sourceStatus: number; unit: string; description: string; adText: string; adFetchedAt: string | null }
 
 const EMPTY: Criteria = { threshold: 70, mustHave: [], niceToHave: [], hardFilters: { minYears: null, requireAny: [], rejectIfAny: [] }, instructions: "" };
 
@@ -25,6 +25,7 @@ export default function SettingsTab({ src, jobId, jobTitle, onSaved }: { src: st
     api<Settings>(`platforms/${src}/jobs/${jobId}/settings`).then((x) => {
       setS(x);
       setC(x.criteria ?? EMPTY);
+      setDesc(x.description ?? "");
     }).catch((e) => setMsg({ cls: "bad", text: e.message }));
   }, [src, jobId]);
 
@@ -36,12 +37,32 @@ export default function SettingsTab({ src, jobId, jobTitle, onSaved }: { src: st
     try {
       const d = await api<Criteria>(`platforms/${src}/jobs/${jobId}/criteria/draft`, { body: { jobTitle, description: desc, current: s?.criteriaKind === "job" ? c : null } });
       setC({ ...EMPTY, ...d, hardFilters: { ...EMPTY.hardFilters, ...d.hardFilters } });
+      setS((o) => (o ? { ...o, description: desc } : o));
       setDirty(true);
       setMsg({ cls: "", text: "پیش‌نویس شرایط آماده شد. بررسی و در صورت نیاز ویرایش کنید، سپس «ذخیره» را بزنید." });
     } catch (e: any) { setMsg({ cls: "bad", text: e.message }); } finally { setBusy(""); }
   };
 
+  const [adBusy, setAdBusy] = useState(false);
+  const [showAd, setShowAd] = useState(false);
+  const descDirty = !!s && desc !== (s.description ?? "");
+  const saveDesc = async () => {
+    try {
+      await api(`platforms/${src}/jobs/${jobId}/description`, { method: "PUT", body: { description: desc } });
+      setS((o) => (o ? { ...o, description: desc } : o));
+    } catch (e: any) { setMsg({ cls: "bad", text: e.message }); }
+  };
+  const fetchAd = async () => {
+    setAdBusy(true); setMsg(null);
+    try {
+      const r = await api<{ adText: string; adFetchedAt: string }>(`platforms/${src}/jobs/${jobId}/ad`, { body: {} });
+      setS((o) => (o ? { ...o, adText: r.adText, adFetchedAt: r.adFetchedAt } : o));
+      setShowAd(true);
+    } catch (e: any) { setMsg({ cls: "bad", text: e.message }); } finally { setAdBusy(false); }
+  };
+
   const save = async () => {
+    if (descDirty) await saveDesc();
     setBusy("save"); setMsg(null);
     try {
       const x = await api<Settings>(`platforms/${src}/jobs/${jobId}/criteria`, { method: "PUT", body: { criteria: c, jobTitle } });
@@ -73,16 +94,33 @@ export default function SettingsTab({ src, jobId, jobTitle, onSaved }: { src: st
               {s.criteriaKind === "job" ? "شرایط اختصاصی این آگهی" : s.criteriaKind === "default" ? "هنوز شرایط اختصاصی ندارد؛ از شرایط عمومی استفاده می‌شود" : s.criteriaKind === "none" ? "هنوز شرایطی تعریف نشده" : `از فایل ${s.criteriaName}`}
             </div>
           </div>
-          {dirty && <span className="badge warn">ذخیره‌نشده</span>}
+          {(dirty || descDirty) && <span className="badge warn">ذخیره‌نشده</span>}
+        </div>
+
+        <div className="field">
+          <div className="row between">
+            <span style={{ fontWeight: 600, fontSize: 13 }}>متن آگهی منتشرشده در {platformName(src)}</span>
+            <button className="btn sm ghost" disabled={adBusy} onClick={fetchAd}>{adBusy ? "در حال دریافت…" : s.adText ? "↻ دریافت دوباره" : "دریافت متن آگهی"}</button>
+          </div>
+          {s.adText ? (
+            <div className="resume-text" style={{ maxHeight: showAd ? 420 : 110, overflow: showAd ? "auto" : "hidden", cursor: showAd ? "auto" : "pointer" }} onClick={() => setShowAd(true)}>{s.adText}</div>
+          ) : (
+            <small className="muted">متن آگهی هنوز دریافت نشده. اگر دریافت نشد، کافی است شغل را در کادر زیر توضیح دهید.</small>
+          )}
         </div>
 
         <label className="field">
-          <span>توضیح شغل به زبان ساده</span>
-          <small>هر چیزی که دنبالش هستید را مثل صحبت با یک کارشناس استخدام بنویسید. هوش مصنوعی آن را به شرایط زیر تبدیل می‌کند.</small>
+          <span>توضیحات شما دربارهٔ این شغل</span>
+          <small>هر چیزی که در آگهی نیست یا برایتان مهم‌تر است را بنویسید. این متن ذخیره می‌شود و هوش مصنوعی در امتیازدهی و گفتگو از آن استفاده می‌کند؛ لازم نیست دوباره توضیح دهید.</small>
           <textarea className="textarea" rows={4} value={desc} onChange={(e) => setDesc(e.target.value)}
-            placeholder="مثلاً: دنبال یک مدیر تولید برای کارخانه‌مان در نجف‌آباد هستیم. حداقل ۵ سال سابقهٔ مدیریت تولید در صنعت لازم است، آشنایی با برنامه‌ریزی تولید و کنترل کیفیت مهم است و اگر با ERP کار کرده باشد بهتر است…" />
+            placeholder="مثلاً: کسی را می‌خواهیم که خودش مدیریت خط تولید را انجام داده باشد، نه فقط کار دفتری. ساکن اصفهان یا نجف‌آباد باشد بهتر است…" />
         </label>
-        <div><button className="btn" disabled={!desc.trim() || busy !== ""} onClick={draft}>{busy === "draft" ? "در حال ساخت…" : "ساخت شرایط با هوش مصنوعی"}</button></div>
+        <div className="row wrap">
+          <button className="btn" disabled={(!desc.trim() && !s.adText) || busy !== ""} onClick={draft}>
+            {busy === "draft" ? "در حال ساخت…" : desc.trim() || !s.adText ? "ساخت شرایط با هوش مصنوعی" : "ساخت شرایط از روی متن آگهی"}
+          </button>
+          {descDirty && <button className="btn ghost" onClick={saveDesc}>ذخیرهٔ توضیحات</button>}
+        </div>
 
         <hr style={{ border: 0, borderTop: "1px solid var(--line)", width: "100%", margin: "4px 0" }} />
 
@@ -123,7 +161,7 @@ export default function SettingsTab({ src, jobId, jobTitle, onSaved }: { src: st
         </label>
 
         {msg && <div className={`notice ${msg.cls}`}>{msg.text}</div>}
-        <div className="row"><button className="btn primary" disabled={busy !== "" || (!dirty && s.criteriaKind === "job")} onClick={save}>{busy === "save" ? "در حال ذخیره…" : "ذخیره شرایط"}</button></div>
+        <div className="row"><button className="btn primary" disabled={busy !== "" || (!dirty && !descDirty && s.criteriaKind === "job")} onClick={save}>{busy === "save" ? "در حال ذخیره…" : "ذخیره شرایط"}</button></div>
       </section>
 
       <section className="panel panel-pad stack">

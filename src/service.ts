@@ -158,6 +158,56 @@ function criteriaFor(src: string, jobId: string, jobTitle?: string): { criteria:
   return { criteria: c, kind: c.name === "default" ? "default" : "matched" };
 }
 
+/** Fetch the published ad text once and cache it (best effort). */
+export async function fetchJobAd(src: string, jobId: string, force = false) {
+  const meta = db().getJobMeta(src, jobId);
+  if (meta.adText && !force) return { adText: meta.adText, adFetchedAt: meta.adFetchedAt };
+  const s = source(src);
+  if (!(s instanceof JobvisionSource)) return { adText: "", adFetchedAt: null };
+  try {
+    const text = await s.getJobAd(jobId);
+    db().setJobMeta(src, jobId, { ad_text: text, ad_fetched_at: new Date().toISOString() });
+    return { adText: text, adFetchedAt: new Date().toISOString() };
+  } catch (e) {
+    if (force) throw new UserError(`دریافت متن آگهی ناموفق بود: ${e instanceof Error ? e.message : e}. می‌توانید متن آگهی را در «توضیح شغل» بنویسید یا کپی کنید.`, 502);
+    db().setJobMeta(src, jobId, { ad_fetched_at: `failed ${new Date().toISOString()}` });
+    return { adText: "", adFetchedAt: null };
+  }
+}
+
+/** Everything known about a job, for the AI (chat, scoring, criteria drafts). */
+async function jobContext(src: string, jobId: string) {
+  let meta = db().getJobMeta(src, jobId);
+  // try fetching the ad automatically once a day at most
+  const lastTry = meta.adFetchedAt?.replace(/^failed /, "");
+  if (!meta.adText && (!lastTry || Date.now() - new Date(lastTry).getTime() > 86_400_000)) {
+    await fetchJobAd(src, jobId).catch(() => {});
+    meta = db().getJobMeta(src, jobId);
+  }
+  const rows = db().listByJob(src, jobId);
+  const title = meta.title || rows.find((r) => r.job)?.job || `آگهی ${jobId}`;
+  const { criteria } = criteriaFor(src, jobId, title);
+  return { title, meta, criteria, rows };
+}
+
+function jobContextText(ctx: Awaited<ReturnType<typeof jobContext>>) {
+  const c = ctx.criteria;
+  return [
+    `عنوان شغل: ${ctx.title}`,
+    ctx.meta.unit && `واحد: ${ctx.meta.unit}`,
+    ctx.meta.adText && `متن آگهیِ منتشرشده:\n${ctx.meta.adText.slice(0, 6000)}`,
+    ctx.meta.description && `توضیحات کارفرما دربارهٔ این شغل:\n${ctx.meta.description.slice(0, 4000)}`,
+    c
+      ? `شرایط غربالگری: حداقل امتیاز قبولی ${c.threshold}؛ الزامی: ${c.mustHave.join("، ") || "-"}؛ امتیاز اضافه: ${c.niceToHave.join("، ") || "-"}${c.hardFilters.minYears != null ? `؛ حداقل سابقه ${c.hardFilters.minYears} سال` : ""}${c.instructions ? `\nتوضیحات غربالگری: ${c.instructions}` : ""}`
+      : "شرایط غربالگری هنوز ذخیره نشده.",
+  ].filter(Boolean).join("\n\n");
+}
+
+export function saveJobDescription(src: string, jobId: string, description: string) {
+  db().setJobMeta(src, jobId, { description: description.trim() });
+  return { description: description.trim() };
+}
+
 export function getJobSettings(src: string, jobId: string) {
   const { criteria, kind } = criteriaFor(src, jobId);
   const cfg = rawSourceConfig(src);
@@ -169,6 +219,9 @@ export function getJobSettings(src: string, jobId: string) {
     criteriaName: criteria?.name ?? null,
     scheduled: (cfg.jobPostIds ?? []).map(String).includes(String(jobId)),
     unit: db().getUnit(src, jobId),
+    description: db().getJobMeta(src, jobId).description,
+    adText: db().getJobMeta(src, jobId).adText,
+    adFetchedAt: db().getJobMeta(src, jobId).adFetchedAt,
     sourceStatus: cfg.status ?? 10,
   };
 }
@@ -194,9 +247,12 @@ export function saveJobCriteria(src: string, jobId: string, input: unknown, jobT
 }
 
 /** Turn the employer's plain-language description into criteria (not saved). */
-export async function draftCriteria(jobTitle: string, description: string, current: CriteriaInput | null) {
+export async function draftCriteria(src: string, jobId: string, jobTitle: string, description: string, current: CriteriaInput | null) {
   const chat = getChat();
   if (!chat) throw new UserError("هوش مصنوعی تنظیم نشده (OMNIROUTE_* در .env)");
+  if (description.trim()) saveJobDescription(src, jobId, description);
+  const ctx = await jobContext(src, jobId);
+  if (!ctx.meta.adText && !ctx.meta.description) throw new UserError("متن آگهی دریافت نشد؛ شغل را در کادر توضیح بنویسید.");
   const system = `You turn an employer's plain description of a job into screening rules for an ATS in Iran.
 Reply with ONE JSON object only:
 {"threshold": number 0-100 (default 70; stricter if the employer sounds strict),
@@ -206,7 +262,8 @@ Reply with ONE JSON object only:
  "instructions": "clear Persian brief for the AI screener: what kind of person, priorities, what to penalize"}
 Never add rules about gender, age, religion, ethnicity or marital status even if asked; mention this in instructions instead of encoding it.
 Keep mustHave to the 3-6 most important items. Use hardFilters only for things the employer says are absolute.`;
-  const user = `JOB TITLE: ${jobTitle}\n${current ? `CURRENT RULES (update them, keep what the employer did not change): ${JSON.stringify(current)}\n` : ""}EMPLOYER SAYS:\n${description}`;
+  const user = `JOB TITLE: ${jobTitle || ctx.title}
+${ctx.meta.adText ? `PUBLISHED JOB AD:\n${ctx.meta.adText.slice(0, 6000)}\n` : ""}${current ? `CURRENT RULES (update them, keep what the employer did not change): ${JSON.stringify(current)}\n` : ""}${ctx.meta.description ? `EMPLOYER SAYS (most important, overrides the ad):\n${ctx.meta.description}` : "Base the rules on the published ad."}`;
   const raw = await chat(system, [{ role: "user", content: user }], 1500);
   const json = raw.slice(raw.indexOf("{"), raw.lastIndexOf("}") + 1);
   return CriteriaInput.parse(JSON.parse(json));
@@ -219,6 +276,7 @@ export async function listJobs(src: string) {
   const jobs = await s.listJobs();
   const stats = new Map(db().jobStats(src).map((x) => [x.job_id, x]));
   const scheduled = new Set((rawSourceConfig(src).jobPostIds ?? []).map(String));
+  for (const j of jobs) if (db().getJobMeta(src, j.id).title !== j.title) db().setJobMeta(src, j.id, { title: j.title });
   return jobs.map((j) => {
     const st = stats.get(j.id);
     return {
@@ -289,8 +347,12 @@ export async function startScoring(src: string, jobId: string, opts: { ids?: str
   let s = source(src);
   const rows = db().listByJob(src, jobId);
   const targets = rows.filter((r) => (opts.ids ? opts.ids.includes(r.id) : true)).filter((r) => opts.rescore || r.decision === "pending" || r.decision === "error");
-  const { criteria } = criteriaFor(src, jobId, rows[0]?.job ?? undefined);
-  if (!criteria) throw new UserError("اول در بخش تنظیمات، شرایط این آگهی را تعریف کنید.");
+  const ctx = await jobContext(src, jobId);
+  const base = ctx.criteria;
+  if (!base) throw new UserError("اول در بخش تنظیمات، شرایط این آگهی را تعریف کنید.");
+  // give the scorer the ad + employer description too
+  const extraCtx = [ctx.meta.adText && `متن آگهی:\n${ctx.meta.adText.slice(0, 4000)}`, ctx.meta.description && `توضیحات کارفرما:\n${ctx.meta.description.slice(0, 3000)}`].filter(Boolean).join("\n\n");
+  const criteria = extraCtx ? { ...base, instructions: [base.instructions, extraCtx].filter(Boolean).join("\n\n") } : base;
   if (!targets.length) throw new UserError(opts.ids ? "رزومه‌های انتخاب‌شده قبلاً امتیاز گرفته‌اند. برای امتیازدهی دوباره «امتیاز مجدد» را بزنید." : "رزومهٔ جدیدی برای امتیازدهی نیست.");
 
   const task: Task = { running: true, done: 0, total: targets.length, current: null, log: [], errors: 0, startedAt: new Date().toISOString() };
@@ -371,9 +433,8 @@ export async function chatAboutJob(src: string, jobId: string, message: string, 
   const chat = getChat();
   if (!chat) throw new UserError("هوش مصنوعی تنظیم نشده (OMNIROUTE_* در .env)");
   if (!message.trim()) throw new UserError("پیام خالی است");
-  const rows = db().listByJob(src, jobId);
-  const title = rows[0]?.job ?? `آگهی ${jobId}`;
-  const { criteria } = criteriaFor(src, jobId, title);
+  const ctx = await jobContext(src, jobId);
+  const rows = ctx.rows;
 
   // full resumes for selected candidates and anyone named in the message
   const named = rows.filter((r) => focusIds.includes(r.id) || (r.name && r.name.split(/\s+/).some((p) => p.length > 2 && message.includes(p))));
@@ -386,21 +447,24 @@ export async function chatAboutJob(src: string, jobId: string, message: string, 
     resumes.push(`### رزومهٔ کامل ${r.name} (id ${r.id})\n${t}`);
   }
 
+  const n = (d: string) => rows.filter((r) => r.decision === d).length;
+  const scored = rows.filter((r) => r.decision === "accepted" || r.decision === "rejected");
+  const avg = scored.length ? Math.round(scored.reduce((x, r) => x + (r.score ?? 0), 0) / scored.length) : null;
+
   const system = `تو دستیار استخدام یک کارفرما هستی و دربارهٔ یک آگهی شغلی و رزومه‌های دریافتی آن با او گفتگو می‌کنی.
-همیشه به فارسی، کوتاه، دقیق و کاربردی جواب بده. فقط بر اساس اطلاعات زیر حرف بزن و اگر اطلاعاتی نیست صادقانه بگو.
-وقتی می‌پرسد چرا کسی پذیرفته یا رد شده، به نقاط قوت/ضعف و شرایط آگهی استناد کن. وقتی مقایسه می‌خواهد، جدول یا فهرست کوتاه بده.
+همهٔ اطلاعات آگهی و خلاصهٔ همهٔ رزومه‌ها در ادامه آمده است؛ این‌ها را از قبل می‌دانی، پس از کارفرما نخواه شغل یا شرایط را دوباره توضیح دهد.
+همیشه به فارسی، کوتاه، دقیق و کاربردی جواب بده. فقط بر اساس همین اطلاعات حرف بزن و اگر چیزی را نمی‌دانی صادقانه بگو.
+وقتی می‌پرسد چرا کسی پذیرفته یا رد شده، به نقاط قوت/ضعف و شرایط آگهی استناد کن. وقتی مقایسه می‌خواهد، فهرست یا جدول کوتاه بده.
 جنسیت، سن، مذهب، قومیت و وضعیت تأهل را در قضاوت دخالت نده.
 
-## آگهی: ${title}
-${criteria ? `حداقل امتیاز قبولی: ${criteria.threshold}
-الزامی: ${criteria.mustHave.join("، ") || "-"}
-امتیاز اضافه: ${criteria.niceToHave.join("، ") || "-"}
-${criteria.hardFilters.minYears != null ? `حداقل سابقه: ${criteria.hardFilters.minYears} سال\n` : ""}توضیحات کارفرما: ${criteria.instructions ?? "-"}` : "شرایط آگهی هنوز تعریف نشده."}
+## آگهی
+${jobContextText(ctx)}
 
-## رزومه‌ها (${rows.length} نفر)
-${rows.slice(0, 150).map(candidateLine).join("\n")}
+## رزومه‌ها
+تعداد کل: ${rows.length} · قبول: ${n("accepted")} · رد: ${n("rejected")} · بررسی‌نشده: ${n("pending")} · خطا: ${n("error")}${avg != null ? ` · میانگین امتیاز: ${avg}` : ""}
+${rows.slice(0, 200).map(candidateLine).join("\n")}
 
-${resumes.length ? `## جزئیات\n${resumes.join("\n\n")}` : ""}`;
+${resumes.length ? `## جزئیات رزومه‌های مورد بحث\n${resumes.join("\n\n")}` : ""}`;
 
   const history = db().getChat(src, jobId);
   const messages: ChatMessage[] = [...history.slice(-20), { role: "user", content: message }];
