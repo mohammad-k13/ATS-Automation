@@ -93,16 +93,15 @@ function JobPage() {
 
   return (
     <>
-      <div className="small" style={{ marginBottom: 8 }}><Link href={`/p/${src}`} className="muted">آگهی‌های {platformName(src)} ›</Link></div>
-      <div className="page-head">
-        <div>
-          <h1>{title}</h1>
-          <p>{fa(counts.all)} رزومه · {fa(scored)} بررسی‌شده</p>
-        </div>
-      </div>
-
       <div className="job-layout">
         <div>
+          <div className="small" style={{ marginBottom: 8 }}><Link href={`/p/${src}`} className="muted">آگهی‌های {platformName(src)} ›</Link></div>
+          <div className="page-head">
+            <div>
+              <h1>{title}</h1>
+              <p>{fa(counts.all)} رزومه · {fa(scored)} بررسی‌شده</p>
+            </div>
+          </div>
           <div className="tabs">
             <button className={`tab ${tab === "resumes" ? "on" : ""}`} onClick={() => setTab("resumes")}>رزومه‌ها</button>
             <button className={`tab ${tab === "settings" ? "on" : ""}`} onClick={() => setTab("settings")}>تنظیمات {noCriteria && <span className="dot warn" style={{ display: "inline-block", marginInlineStart: 4 }} />}</button>

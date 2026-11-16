@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { tokenState } from "../components/Sidebar";
-import TokenButton from "../components/TokenDialog";
+import AutoLogin from "../components/AutoLogin";
 import { api, platformName, type Status } from "../lib/api";
 
 export default function SettingsPage() {
@@ -42,12 +42,12 @@ export default function SettingsPage() {
           {st?.platforms.map((p) => {
             const ts = tokenState(p.token);
             return (
-              <div key={p.name} className="row between" style={{ borderBottom: "1px solid var(--line)", paddingBottom: 12 }}>
-                <div>
+              <div key={p.name} className="stack" style={{ borderBottom: "1px solid var(--line)", paddingBottom: 16, gap: 12 }}>
+                <div className="row between">
                   <h3>{platformName(p.name)}</h3>
-                  <div className="small muted row"><span className={`dot ${ts.cls}`} /> توکن: {ts.label}{p.token.valid && " باقی‌مانده"}</div>
+                  <div className="small muted row"><span className={`dot ${ts.cls}`} /> اتصال: {p.token.valid ? `برقرار (${ts.label} تا انقضای توکن)` : ts.label}</div>
                 </div>
-                {p.type === "jobvision" && <TokenButton src={p.name} onSaved={loadStatus} primary={!p.token.valid} />}
+                {p.type === "jobvision" && <AutoLogin p={p} onChange={loadStatus} />}
               </div>
             );
           })}

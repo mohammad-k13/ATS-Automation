@@ -24,7 +24,7 @@ export default function TokenButton({ src, onSaved, primary }: { src: string; on
   };
   return (
     <>
-      <button className={`btn ${primary ? "primary" : ""}`} onClick={() => ref.current?.showModal()}>به‌روزرسانی توکن</button>
+      <button className={`btn ${primary ? "primary" : "ghost sm"}`} onClick={() => ref.current?.showModal()}>{primary ? "به‌روزرسانی توکن" : "روش دستی: واردکردن توکن"}</button>
       <dialog ref={ref} className="modal">
         <div className="panel-pad stack">
           <h2>توکن {platformName(src)}</h2>

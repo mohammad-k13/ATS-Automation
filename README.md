@@ -35,6 +35,12 @@ Open http://localhost:3000.
 
 For daily use: `npm run build` once, then `npm start` (faster than dev mode).
 
+## Automatic login (no DevTools needed)
+In the dashboard: **منابع و توکن‌ها** → enter the Jobvision email + password → **ذخیره و ورود**.
+The app logs in with the Edge/Chrome already installed on the PC (hidden window), saves the token, and logs in again by itself whenever the token expires (dashboard and `npm run schedule`).
+If the site asks for a captcha or SMS code, tick **نمایش مرورگر** and finish it in the window.
+CLI: `npm run ats -- login jobvision --email you@company.com --password "..."` (add `--show` to see the browser).
+
 ## Usage
 ```bash
 npm run dry                         # fetch + score, print what would be sent, save nothing

@@ -2,7 +2,6 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
-import TokenButton from "../../components/TokenDialog";
 import { api, fa, faDate, pct, platformName, type Status } from "../../lib/api";
 
 interface Job {
@@ -31,9 +30,14 @@ export default function JobsPage() {
     try {
       const st = await api<Status>("status");
       const p = st.platforms.find((x) => x.name === src);
+      const canAutoLogin = !!(p?.autoLogin.email && p.autoLogin.hasPassword);
       setToken(p?.token ?? null);
-      if (!p?.token.valid) return setJobs([]);
+      if (!p?.token.valid && !canAutoLogin) return setJobs([]);
+      setJobs(null);
       setJobs(await api<Job[]>(`platforms/${src}/jobs`));
+      const st2 = await api<Status>("status"); // token may have been renewed by auto-login
+      setToken(st2.platforms.find((x) => x.name === src)?.token ?? null);
+      window.dispatchEvent(new Event("ats:status"));
     } catch (e: any) {
       setErr(e.message);
       setJobs([]);
@@ -51,19 +55,19 @@ export default function JobsPage() {
         </div>
         <div className="row">
           {jobs && jobs.length > 3 && <input className="input" style={{ width: 200 }} placeholder="جستجوی آگهی…" value={q} onChange={(e) => setQ(e.target.value)} />}
-          <TokenButton src={src} onSaved={load} primary={!!token && !token.valid} />
+          <button className="btn" onClick={load}>↻ به‌روزرسانی</button>
         </div>
       </div>
 
-      {token && !token.valid && (
+      {token && !token.valid && jobs !== null && !jobs.length && (
         <div className="notice bad" style={{ marginBottom: 16 }}>
-          توکن {platformName(src)} {token.hasToken ? "منقضی شده" : "وارد نشده"}. روی «به‌روزرسانی توکن» بزنید.
+          اتصال به {platformName(src)} برقرار نیست. در <Link href="/settings" style={{ textDecoration: "underline" }}>منابع و توکن‌ها</Link> ایمیل و رمز عبور را وارد کنید تا ورود خودکار انجام شود.
         </div>
       )}
       {err && <div className="notice bad" style={{ marginBottom: 16 }}>{err}</div>}
 
       {jobs === null ? (
-        <div className="empty">در حال دریافت آگهی‌ها…</div>
+        <div className="empty">در حال دریافت آگهی‌ها… {token && !token.valid && "(ورود خودکار به سایت، چند ثانیه صبر کنید)"}</div>
       ) : list.length ? (
         <div className="panel joblist">
           {list.map((j) => {

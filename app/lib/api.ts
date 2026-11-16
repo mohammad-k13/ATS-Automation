@@ -20,7 +20,11 @@ export const faDate = (s: string | null | undefined) =>
 export interface Status {
   ai: { provider: string; model: string | null };
   telegram: boolean;
-  platforms: { name: string; type: string; token: { hasToken: boolean; expiresAt: string | null; valid: boolean } }[];
+  platforms: {
+    name: string; type: string;
+    token: { hasToken: boolean; expiresAt: string | null; valid: boolean };
+    autoLogin: { email: string; hasPassword: boolean };
+  }[];
   sourcesError: string | null;
 }
 

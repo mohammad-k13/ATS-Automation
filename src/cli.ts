@@ -5,9 +5,11 @@ import { loadCriteria } from "./criteria";
 import { Db } from "./db";
 import { runOnce } from "./pipeline";
 import { aiInfo, getScorer } from "./ai";
+import { ensureToken, hasCredentials, loginAndSave, saveCredentials, tokenInfo } from "./auth/token";
 import { KeywordScorer, type Scorer } from "./score";
 import { loadSources } from "./sources/index";
 import { HttpSource } from "./sources/http-source";
+import { JobvisionSource } from "./sources/jobvision-source";
 import type { Source } from "./types";
 import { ConsoleNotifier, TelegramNotifier, type Notifier } from "./telegram";
 
@@ -18,6 +20,9 @@ const { values: flags, positionals } = parseArgs({
     source: { type: "string", short: "s" },
     "dry-run": { type: "boolean", default: false },
     "no-llm": { type: "boolean", default: false },
+    show: { type: "boolean", default: false },
+    email: { type: "string" },
+    password: { type: "string" },
     limit: { type: "string", default: "30" },
   },
 });
@@ -41,6 +46,14 @@ function makeNotifier(dry: boolean): Notifier {
 
 async function run() {
   const dry = flags["dry-run"]!;
+  // refresh expired tokens automatically when email/password are saved
+  for (const s of loadSources(env.SOURCES_FILE || "sources.yaml", flags.source)) {
+    if (!(s instanceof JobvisionSource)) continue;
+    if (!tokenInfo(s.name).valid && hasCredentials(s.name)) {
+      console.log(`🔑 ${s.name}: token expired, logging in…`);
+      await ensureToken(s.name, { log: (l) => console.log("   " + l) });
+    }
+  }
   return runOnce({
     sources: loadSources(env.SOURCES_FILE || "sources.yaml", flags.source),
     criteria: loadCriteria(env.CRITERIA_DIR || "criteria"),
@@ -107,6 +120,17 @@ async function main() {
       console.log("forgotten; next run will re-score");
       break;
 
+    case "login": {
+      // npm run ats -- login jobvision [--email x --password y] [--show]
+      const src = arg1 || "jobvision";
+      if (flags.email || flags.password) saveCredentials(src, flags.email ?? "", flags.password);
+      if (!hasCredentials(src)) throw new Error(`Save credentials first: npm run ats -- login ${src} --email you@company.com --password "..."`);
+      await loginAndSave(src, { show: flags.show, log: (l) => console.log(l) });
+      const t = tokenInfo(src);
+      console.log(`✔ token saved to .env, valid until ${t.expiresAt}`);
+      break;
+    }
+
     case "test-ai": {
       const sc = makeScorer();
       const r = await sc.score({ source: "test", id: "1", name: "Test", jobTitle: "Backend Developer" },
@@ -128,6 +152,7 @@ async function main() {
   npm run ats -- probe NAME [page]                           Inspect an endpoint response + field mapping
   npm run ats -- list [--limit 30]                           Show processed applications
   npm run ats -- forget SOURCE [ID]                          Re-process an application (or whole source)
+  npm run ats -- login jobvision [--email E --password P] [--show]   Log in and save a fresh token
   npm run ats -- test-ai                                     Score a sample resume with your AI setup
   npm run ats -- test-telegram                               Send a test message`);
   }

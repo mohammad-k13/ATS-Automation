@@ -12,7 +12,9 @@ import { Db, type Row } from "./db";
 import type { ChatMessage } from "./score";
 import { loadSources, validateSourcesYaml } from "./sources/index";
 import { AuthError } from "./sources/http-source";
-import { JobvisionSource, jwtExpiry } from "./sources/jobvision-source";
+import { JobvisionSource } from "./sources/jobvision-source";
+import { credentials, ensureToken, hasCredentials, loginAndSave, saveCredentials, tokenInfo, tokenKey, writeEnv } from "./auth/token";
+export { tokenInfo };
 import type { Application, Criteria, Source } from "./types";
 
 const env = process.env;
@@ -33,17 +35,6 @@ export class UserError extends Error {
   }
 }
 
-// ---------- .env ----------
-function writeEnv(key: string, value: string) {
-  const file = ".env";
-  const lines = fs.existsSync(file) ? fs.readFileSync(file, "utf8").split(/\r?\n/) : [];
-  const i = lines.findIndex((l) => l.startsWith(`${key}=`));
-  if (i >= 0) lines[i] = `${key}=${value}`;
-  else lines.push(`${key}=${value}`);
-  fs.writeFileSync(file, lines.join("\n"));
-  env[key] = value;
-}
-
 // ---------- platforms ----------
 function sources(): Source[] {
   return loadSources(SOURCES_FILE());
@@ -58,23 +49,46 @@ function jobvision(name: string): JobvisionSource {
   if (!(s instanceof JobvisionSource)) throw new UserError(`${name} یک منبع جاب‌ویژن نیست`);
   return s;
 }
-const tokenKey = (src: string) => `${src.toUpperCase()}_TOKEN`;
-
-export function tokenInfo(src: string) {
-  const raw = (env[tokenKey(src)] ?? "").replace(/^Bearer\s+/i, "").trim();
-  const exp = raw ? jwtExpiry(raw) : null;
-  return { hasToken: !!raw, expiresAt: exp?.toISOString() ?? null, valid: !!exp && exp.getTime() > Date.now() + 60_000 };
-}
-
 export function status() {
   let platforms: { name: string; type: string; token: ReturnType<typeof tokenInfo> }[] = [];
   let sourcesError: string | null = null;
   try {
-    platforms = sources().map((s) => ({ name: s.name, type: s instanceof JobvisionSource ? "jobvision" : "other", token: tokenInfo(s.name) }));
+    platforms = sources().map((s) => ({
+      name: s.name, type: s instanceof JobvisionSource ? "jobvision" : "other", token: tokenInfo(s.name),
+      autoLogin: { email: credentials(s.name).email, hasPassword: !!credentials(s.name).password },
+    }));
   } catch (e) {
     sourcesError = e instanceof Error ? e.message : String(e);
   }
   return { ai: aiInfo(), telegram: !!(env.TELEGRAM_BOT_TOKEN && env.TELEGRAM_CHAT_ID), platforms, sourcesError };
+}
+
+export function setCredentials(src: string, email: string, password?: string) {
+  if (!email.trim()) throw new UserError("ایمیل خالی است");
+  saveCredentials(src, email, password || undefined);
+  return { email: credentials(src).email, hasPassword: !!credentials(src).password };
+}
+
+/** Log in with the saved email/password and store the new token. */
+export async function loginNow(src: string, show = false) {
+  if (!hasCredentials(src)) throw new UserError("اول ایمیل و رمز عبور را ذخیره کنید");
+  const log: string[] = [];
+  try {
+    await loginAndSave(src, { show, log: (l) => log.push(l) });
+  } catch (e) {
+    throw new UserError(e instanceof Error ? e.message : String(e), 502);
+  }
+  return { ...tokenInfo(src), log };
+}
+
+/** Make sure there is a valid token; logs in automatically if credentials are saved. */
+async function needToken(src: string) {
+  try {
+    if (await ensureToken(src)) return;
+  } catch (e) {
+    throw new UserError(`ورود خودکار ناموفق بود: ${e instanceof Error ? e.message : e}`, 401);
+  }
+  throw new UserError(tokenInfo(src).hasToken ? "توکن منقضی شده. از «منابع و توکن‌ها» وارد شوید یا توکن جدید بدهید." : "توکن وارد نشده. از «منابع و توکن‌ها» ایمیل و رمز را ذخیره کنید.", 401);
 }
 
 export function setToken(src: string, token: string) {
@@ -199,6 +213,7 @@ Keep mustHave to the 3-6 most important items. Use hardFilters only for things t
 
 // ---------- jobs & applications ----------
 export async function listJobs(src: string) {
+  await needToken(src);
   const s = jobvision(src);
   const jobs = await s.listJobs();
   const stats = new Map(db().jobStats(src).map((x) => [x.job_id, x]));
@@ -230,6 +245,7 @@ const rowOut = (r: Row) => ({
 
 /** Pull the current applicant list from the site into the DB (no scoring). */
 export async function refreshApplications(src: string, jobId: string) {
+  await needToken(src);
   const s = source(src);
   if (s instanceof JobvisionSource) s.onlyJobs = [Number(jobId)];
   const apps = await s.listApplications();
@@ -265,10 +281,11 @@ export function getTask(src: string, jobId: string): Task | null {
 }
 
 /** Score some (ids) or all applicants of a job in the background. */
-export function startScoring(src: string, jobId: string, opts: { ids?: string[]; rescore?: boolean }) {
+export async function startScoring(src: string, jobId: string, opts: { ids?: string[]; rescore?: boolean }) {
   const key = `${src}:${jobId}`;
   if (state().tasks.get(key)?.running) throw new UserError("امتیازدهی این آگهی در حال اجراست", 409);
-  const s = source(src);
+  await needToken(src);
+  let s = source(src);
   const rows = db().listByJob(src, jobId);
   const targets = rows.filter((r) => (opts.ids ? opts.ids.includes(r.id) : true)).filter((r) => opts.rescore || r.decision === "pending" || r.decision === "error");
   const { criteria } = criteriaFor(src, jobId, rows[0]?.job ?? undefined);
@@ -284,7 +301,9 @@ export function startScoring(src: string, jobId: string, opts: { ids?: string[];
   };
 
   (async () => {
-    for (const r of targets) {
+    let relogged = false;
+    for (let i = 0; i < targets.length; i++) {
+      const r = targets[i];
       task.current = r.name;
       const app: Application = {
         source: src, id: r.id, name: r.name, jobId: r.job_id ?? jobId, jobTitle: r.job ?? undefined,
@@ -297,6 +316,19 @@ export function startScoring(src: string, jobId: string, opts: { ids?: string[];
         db().save({ source: src, id: app.id, name: app.name, job: app.jobTitle, jobId: app.jobId, decision: res.pass ? "accepted" : "rejected", score: res.score, result: res, resumeText: text, extra: app.extra, profileUrl: app.profileUrl, resumeUrl: app.resumeUrl, appliedAt: app.appliedAt });
         log(`${app.name}: ${res.score}`);
       } catch (e) {
+        // token expired mid-run: log in again once and retry this resume
+        if (e instanceof AuthError && !relogged && hasCredentials(src)) {
+          relogged = true;
+          log("توکن منقضی شد؛ ورود دوباره…");
+          try {
+            await ensureToken(src, { force: true });
+            s = source(src);
+            i--;
+            continue;
+          } catch (le) {
+            log(`✖ ورود دوباره ناموفق: ${le instanceof Error ? le.message : le}`);
+          }
+        }
         const msg = e instanceof Error ? e.message : String(e);
         task.errors++;
         log(`✖ ${app.name}: ${msg}`);
