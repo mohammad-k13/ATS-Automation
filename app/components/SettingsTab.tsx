@@ -1,6 +1,7 @@
 "use client";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
+import { isFilterKeyword } from "@/src/keywords";
 import { api, fa, platformName } from "../lib/api";
 import TagsInput from "./TagsInput";
 import { useApi } from "../lib/cache";
@@ -37,6 +38,8 @@ export default function SettingsTab({ src, jobId, jobTitle, onSaved, scoringRunn
     setDesc(q.data.description ?? "");
   }, [q.data]);
   useEffect(() => { if (q.error) setMsg({ cls: "bad", text: q.error.message }); }, [q.error]);
+
+  const longFilters = [...(c.hardFilters.requireAny ?? []), ...(c.hardFilters.rejectIfAny ?? [])].filter((x) => !isFilterKeyword(x));
 
   const upd = (patch: Partial<Criteria>) => { touched.current = true; setC((o) => ({ ...o, ...patch })); setDirty(true); };
   const updHF = (patch: Partial<Criteria["hardFilters"]>) => { touched.current = true; setC((o) => ({ ...o, hardFilters: { ...o.hardFilters, ...patch } })); setDirty(true); };
@@ -167,13 +170,21 @@ export default function SettingsTab({ src, jobId, jobTitle, onSaved, scoringRunn
         <div className="grid2">
           <label className="field">
             <span>حتماً یکی از این‌ها را داشته باشد</span>
+            <small>کلمهٔ کوتاه، نه جمله (مثلاً «نگهبانی»، «انتظامات»). این‌ها عیناً در متن رزومه جستجو می‌شوند.</small>
             <TagsInput value={c.hardFilters.requireAny} onChange={(v) => updHF({ requireAny: v })} placeholder="اختیاری" />
           </label>
           <label className="field">
             <span>اگر این‌ها را داشت رد شود</span>
+            <small>کلمهٔ کوتاه، نه جمله.</small>
             <TagsInput value={c.hardFilters.rejectIfAny} onChange={(v) => updHF({ rejectIfAny: v })} placeholder="اختیاری" />
           </label>
         </div>
+        {longFilters.length > 0 && (
+          <div className="notice">
+            این عبارت‌ها جمله هستند و نمی‌توانند شرط قطعی باشند؛ هنگام ذخیره به «توضیحات برای هوش مصنوعی» منتقل می‌شوند تا هوش مصنوعی خودش قضاوت کند:
+            <ul style={{ margin: "6px 0 0", paddingInlineStart: 18 }}>{longFilters.map((x) => <li key={x}>{x}</li>)}</ul>
+          </div>
+        )}
         <label className="field">
           <span>توضیحات برای هوش مصنوعی</span>
           <small>اولویت‌ها، چیزهایی که مهم است و چیزهایی که امتیاز را کم می‌کند</small>

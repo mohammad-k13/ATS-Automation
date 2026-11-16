@@ -197,7 +197,12 @@ function JobPage() {
                               <div className="row wrap"><b>{a.name}</b><span className={`badge ${cls}`}>{label}</span>{a.extra?.experienceAlerts?.length > 0 && <span className="alert-count" title={a.extra.experienceAlerts.join("\n")}>⚠ {fa(a.extra.experienceAlerts.length)}</span>}</div>
                               <div className="small muted">{[a.extra?.lastJob, a.extra?.totalWorkExperienceYears != null ? `${fa(a.extra.totalWorkExperienceYears)} سال سابقه` : null].filter(Boolean).join(" · ")}</div>
                             </td>
-                            <td className="sum">{a.result?.summary ?? (a.decision === "error" ? <span className="error-text">{a.error}</span> : <span className="faint">ارسال {faDate(a.appliedAt)}</span>)}</td>
+                            <td className="sum">
+                              {a.result?.hardFilterFailures?.length > 0 && (
+                                <div className="error-text" style={{ marginBottom: 4 }}>رد قطعی: {a.result.hardFilterFailures.join("؛ ")}</div>
+                              )}
+                              {a.result?.summary ?? (a.decision === "error" ? <span className="error-text">{a.error}</span> : <span className="faint">ارسال {faDate(a.appliedAt)}</span>)}
+                            </td>
                             <td onClick={(e) => e.stopPropagation()}>
                               <button className="btn sm" disabled={running} onClick={() => score({ ids: [a.id], rescore: true })}>{a.decision === "pending" ? "امتیازدهی" : "مجدد"}</button>
                             </td>

@@ -33,8 +33,8 @@ test("keyword matching handles case, boundaries and Persian variants", () => {
 });
 
 test("hard filters", () => {
-  assert.deepEqual(hardFilterFailures("intern only", crit, 5), ["contains rejected term: intern only"]);
-  assert.deepEqual(hardFilterFailures("x", crit, 1), ["experience 1y < 2y"]);
+  assert.deepEqual(hardFilterFailures("intern only", crit, 5), ["عبارت ردکننده در رزومه هست: «intern only»"]);
+  assert.deepEqual(hardFilterFailures("x", crit, 1), ["سابقهٔ کار ۱ سال است، کمتر از حداقل ۲ سال"]);
   assert.deepEqual(hardFilterFailures("x", crit, null), []);
 });
 
@@ -92,4 +92,26 @@ test("partial approval band: accept ≥ threshold, partial ≥ partialThreshold,
   assert.equal(decisionOf(low), "rejected");
   const blocked = await s.score({ source: "t", id: "4", name: "d" }, "Node.js PostgreSQL Docker Redis intern only", { ...c, hardFilters: { rejectIfAny: ["intern only"] } });
   assert.equal(decisionOf(blocked), "rejected");
+});
+
+test("hard filters: Persian endings match, sentences are not used as literal filters", async () => {
+  const { hasKeyword, hardFilterFailures } = await import("../src/score");
+  const { tidyCriteria } = await import("../src/criteria");
+  const resume = "۳ سال سابقهٔ نگهبانی و کار با دوربین‌های مداربسته و سیستم‌های حفاظتی";
+  assert.ok(hasKeyword(resume, "نگهبان"), "نگهبان should match نگهبانی");
+  assert.ok(hasKeyword(resume, "دوربین مداربسته"));
+  assert.ok(!hasKeyword("کارخانه فولاد", "کار"), "must not match inside another word");
+
+  const sentence = "حداقل ۳ سال سابقه کار در حراست یا انتظامات در ۵ سال گذشته";
+  const raw: Criteria = { ...crit, mustHave: [], niceToHave: [], instructions: "برای کارخانه", hardFilters: { requireAny: [sentence, "نگهبانی"], rejectIfAny: [] } };
+  // the sentence alone must not reject a matching guard
+  assert.deepEqual(hardFilterFailures(resume, raw, null), []);
+  // and saving moves it into the instructions
+  const tidy = tidyCriteria(raw);
+  assert.deepEqual(tidy.hardFilters.requireAny, ["نگهبانی"]);
+  assert.match(tidy.instructions!, /برای کارخانه/);
+  assert.match(tidy.instructions!, /حراست یا انتظامات/);
+  // messages are Persian
+  assert.match(hardFilterFailures("رزومهٔ بی‌ربط", raw, 1)[0], /هیچ‌کدام از موارد الزامی/);
+  assert.match(hardFilterFailures(resume, { ...raw, hardFilters: { minYears: 3 } }, 0)[0], /سابقهٔ کار ۰ سال است، کمتر از حداقل ۳ سال/);
 });

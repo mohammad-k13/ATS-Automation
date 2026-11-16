@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import YAML from "yaml";
 import { z } from "zod";
+import { isFilterKeyword } from "./keywords";
 import { defaultPartial, type Application, type Criteria } from "./types";
 
 const CriteriaSchema = z.object({
@@ -17,6 +18,28 @@ const CriteriaSchema = z.object({
   instructions: z.string().optional(),
 });
 
+/**
+ * Hard-filter fields are matched literally against the resume, so a descriptive sentence there would
+ * reject everybody. Keep only short keywords and hand the sentences to the AI as instructions.
+ */
+export function tidyCriteria<T extends Criteria>(c: T): T {
+  const hf = c.hardFilters ?? {};
+  const split = (list?: string[]) => {
+    const keep = (list ?? []).filter(isFilterKeyword);
+    const moved = (list ?? []).filter((x) => !isFilterKeyword(x));
+    return { keep, moved };
+  };
+  const req = split(hf.requireAny);
+  const rej = split(hf.rejectIfAny);
+  if (!req.moved.length && !rej.moved.length) return c;
+  const notes = [
+    req.moved.length ? `شرط‌های لازم (با قضاوت خودت بررسی کن): ${req.moved.join(" | ")}` : "",
+    rej.moved.length ? `اگر این موارد صدق می‌کند امتیاز را پایین بیاور: ${rej.moved.join(" | ")}` : "",
+  ].filter(Boolean);
+  const instructions = [c.instructions?.trim(), ...notes].filter(Boolean).join("\n");
+  return { ...c, hardFilters: { ...hf, requireAny: req.keep, rejectIfAny: rej.keep }, instructions };
+}
+
 export function loadCriteria(dir: string): Criteria[] {
   if (!fs.existsSync(dir)) return [];
   return fs
@@ -27,7 +50,7 @@ export function loadCriteria(dir: string): Criteria[] {
       const parsed = CriteriaSchema.safeParse(YAML.parse(fs.readFileSync(path.join(dir, f), "utf8")));
       if (!parsed.success) throw new Error(`Invalid criteria file ${f}: ${parsed.error.message}`);
       const c = parsed.data;
-      return { ...c, partialThreshold: Math.min(c.partialThreshold ?? defaultPartial(c.threshold), c.threshold) } as Criteria;
+      return tidyCriteria({ ...c, partialThreshold: Math.min(c.partialThreshold ?? defaultPartial(c.threshold), c.threshold) } as Criteria);
     });
 }
 

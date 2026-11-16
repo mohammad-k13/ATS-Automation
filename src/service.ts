@@ -7,7 +7,7 @@ import path from "node:path";
 import YAML from "yaml";
 import { z } from "zod";
 import { aiInfo, getChat, getScorer } from "./ai";
-import { loadCriteria, pickCriteria } from "./criteria";
+import { loadCriteria, pickCriteria, tidyCriteria } from "./criteria";
 import { Db, type Row, type ThreadRow } from "./db";
 import { EXPORT_INSTRUCTIONS, extractExports, type ExportTable } from "./exports";
 import type { ChatMessage } from "./score";
@@ -229,18 +229,19 @@ export function getJobSettings(src: string, jobId: string) {
 }
 
 export function saveJobCriteria(src: string, jobId: string, input: unknown, jobTitle?: string) {
-  const c = CriteriaInput.parse(input);
+  const parsed = CriteriaInput.parse(input);
+  const c = tidyCriteria({ ...parsed, name: `job-${jobId}`, match: {}, partialThreshold: parsed.partialThreshold ?? defaultPartial(parsed.threshold), hardFilters: { minYears: parsed.hardFilters.minYears ?? undefined, requireAny: parsed.hardFilters.requireAny, rejectIfAny: parsed.hardFilters.rejectIfAny } } as unknown as Criteria);
   const doc = {
     name: `job-${jobId}`,
     match: { jobIds: [String(jobId)] },
     threshold: c.threshold,
-    partialThreshold: Math.min(c.partialThreshold ?? defaultPartial(c.threshold), c.threshold),
+    partialThreshold: Math.min(c.partialThreshold, c.threshold),
     mustHave: c.mustHave,
     niceToHave: c.niceToHave,
     hardFilters: {
       ...(c.hardFilters.minYears != null ? { minYears: c.hardFilters.minYears } : {}),
-      requireAny: c.hardFilters.requireAny,
-      rejectIfAny: c.hardFilters.rejectIfAny,
+      requireAny: c.hardFilters.requireAny ?? [],
+      rejectIfAny: c.hardFilters.rejectIfAny ?? [],
     },
     instructions: c.instructions,
   };
@@ -263,6 +264,9 @@ Reply with ONE JSON object only:
  "mustHave": [short skill/experience phrases that are truly required, in the language candidates use in resumes - usually Persian, keep tool names in English],
  "niceToHave": [bonus phrases],
  "hardFilters": {"minYears": number|null, "requireAny": [], "rejectIfAny": []},
+ // requireAny/rejectIfAny are matched LITERALLY against the resume text: only single words or 2-3 word terms
+ // that a candidate would actually write (e.g. "نگهبانی", "انتظامات"). NEVER put sentences or conditions there —
+ // those belong in "instructions". If in doubt, leave them empty.
  "instructions": "clear Persian brief for the AI screener: what kind of person, priorities, what to penalize"}
 Never add rules about gender, age, religion, ethnicity or marital status even if asked; mention this in instructions instead of encoding it.
 Keep mustHave to the 3-6 most important items. Use hardFilters only for things the employer says are absolute.`;

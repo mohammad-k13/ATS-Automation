@@ -20,7 +20,7 @@ test("OpenAI-compatible (OmniRoute) scorer: sends key/model, parses JSON reply, 
     assert.equal(seen.body.model, "my/model");
     assert.equal(r.score, 82);
     assert.equal(r.pass, false, "minYears 5 > 4 must fail even with score 82");
-    assert.deepEqual(r.hardFilterFailures, ["experience 4y < 5y"]);
+    assert.deepEqual(r.hardFilterFailures, ["سابقهٔ کار ۴ سال است، کمتر از حداقل ۵ سال"]);
   } finally {
     srv.close();
   }

@@ -1,29 +1,15 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
 import { httpFetch } from "./http";
+import { hasKeyword, isFilterKeyword } from "./keywords";
 import type { Application, Criteria, ScoreResult } from "./types";
 
 export interface Scorer {
   score(app: Application, resumeText: string, c: Criteria): Promise<ScoreResult>;
 }
 
-/** Normalize Arabic/Persian variants and case so keyword matching works on Persian resumes too. */
-export function normalize(s: string): string {
-  return s
-    .replace(/[يى]/g, "ی")
-    .replace(/ك/g, "ک")
-    .replace(/[‌‏]/g, " ")
-    .replace(/[۰-۹]/g, (d) => String("۰۱۲۳۴۵۶۷۸۹".indexOf(d)))
-    .toLowerCase();
-}
-
-export function hasKeyword(text: string, kw: string): boolean {
-  const t = normalize(text);
-  const k = normalize(kw).trim();
-  if (!k) return false;
-  const esc = k.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "\\s+");
-  return new RegExp(`(?<![\\p{L}\\p{N}])${esc}(?![\\p{L}\\p{N}])`, "u").test(t);
-}
+// Persian text matching lives in keywords.ts (also used by the browser); re-exported for convenience.
+export { hasKeyword, isFilterKeyword, MAX_FILTER_WORDS, normalize } from "./keywords";
 
 export function keywordScore(text: string, c: Criteria) {
   const matched = [...c.mustHave, ...c.niceToHave].filter((k) => hasKeyword(text, k));
@@ -36,12 +22,18 @@ export function keywordScore(text: string, c: Criteria) {
 /** Deterministic rules applied before/after the LLM. Returns list of failure reasons. */
 export function hardFilterFailures(text: string, c: Criteria, years?: number | null): string[] {
   const f = c.hardFilters;
+  const fa = (n: number) => n.toLocaleString("fa-IR", { useGrouping: false });
   const out: string[] = [];
-  if (f.requireAny?.length && !f.requireAny.some((k) => hasKeyword(text, k))) out.push(`none of required: ${f.requireAny.join(", ")}`);
-  for (const k of f.rejectIfAny ?? []) if (hasKeyword(text, k)) out.push(`contains rejected term: ${k}`);
-  if (f.minYears != null && years != null && years < f.minYears) out.push(`experience ${years}y < ${f.minYears}y`);
+  // only short keywords can be matched literally; longer conditions are judged by the AI instead
+  const required = (f.requireAny ?? []).filter(isFilterKeyword);
+  if (required.length && !required.some((k) => hasKeyword(text, k)))
+    out.push(`هیچ‌کدام از موارد الزامی در رزومه نبود: ${required.join("، ")}`);
+  for (const k of (f.rejectIfAny ?? []).filter(isFilterKeyword)) if (hasKeyword(text, k)) out.push(`عبارت ردکننده در رزومه هست: «${k}»`);
+  if (f.minYears != null && years != null && years < f.minYears)
+    out.push(`سابقهٔ کار ${fa(years)} سال است، کمتر از حداقل ${fa(f.minYears)} سال`);
   return out;
 }
+
 
 export class KeywordScorer implements Scorer {
   async score(_app: Application, text: string, c: Criteria): Promise<ScoreResult> {
