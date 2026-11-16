@@ -1,4 +1,4 @@
-import type { ResumeFile } from "./types.js";
+import type { ResumeFile } from "./types";
 
 export async function resumeToText(file: ResumeFile): Promise<string> {
   const name = file.filename.toLowerCase();

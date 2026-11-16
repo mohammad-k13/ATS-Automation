@@ -1,11 +1,11 @@
-import { pickCriteria } from "./criteria.js";
-import type { Db } from "./db.js";
-import { resumeToText } from "./parse.js";
-import type { Scorer } from "./score.js";
-import { AuthError } from "./sources/http-source.js";
-import type { Notifier } from "./telegram.js";
-import type { Application, Criteria, ResumeFile, Source } from "./types.js";
-import { escapeHtml } from "./util.js";
+import { pickCriteria } from "./criteria";
+import type { Db } from "./db";
+import { resumeToText } from "./parse";
+import type { Scorer } from "./score";
+import { AuthError } from "./sources/http-source";
+import type { Notifier } from "./telegram";
+import type { Application, Criteria, ResumeFile, Source } from "./types";
+import { escapeHtml } from "./util";
 
 export interface RunOptions {
   sources: Source[];

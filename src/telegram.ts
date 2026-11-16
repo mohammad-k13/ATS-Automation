@@ -1,7 +1,7 @@
 import { FormData } from "undici";
-import { httpFetch } from "./http.js";
-import type { Application, ResumeFile, ScoreResult } from "./types.js";
-import { escapeHtml, sleep } from "./util.js";
+import { httpFetch } from "./http";
+import type { Application, ResumeFile, ScoreResult } from "./types";
+import { escapeHtml, sleep } from "./util";
 
 export interface Notifier {
   sendAccepted(app: Application, r: ScoreResult, file: ResumeFile | null): Promise<void>;

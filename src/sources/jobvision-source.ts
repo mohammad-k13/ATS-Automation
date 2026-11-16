@@ -1,8 +1,8 @@
 import { z } from "zod";
-import { httpFetch } from "../http.js";
-import type { Application, ResumeFile, Source } from "../types.js";
-import { sleep } from "../util.js";
-import { AuthError } from "./http-source.js";
+import { httpFetch } from "../http";
+import type { Application, ResumeFile, Source } from "../types";
+import { sleep } from "../util";
+import { AuthError } from "./http-source";
 
 /**
  * Jobvision employer panel (employerapi.jobvision.ir). READ-ONLY: never calls ViewCvFor3Seconds,
@@ -52,45 +52,45 @@ export function cvToText(d: any): string {
   const cv = d?.cvDetail ?? {};
   const b = cv.basicInfo ?? {};
   const L: string[] = [];
-  L.push(`Name: ${t(b.fullName)}`);
-  if (cv.aboutMe) L.push(`About: ${t(cv.aboutMe)}`);
-  if (cv.totalWorkExperience != null) L.push(`Total work experience: ${cv.totalWorkExperience} years`);
-  if (b.residenceCity) L.push(`City: ${t(b.residenceCity)}${b.residenceProvince ? `, ${t(b.residenceProvince)}` : ""}`);
-  if (b.militaryServiceStatus) L.push(`Military service: ${t(b.militaryServiceStatus)}`);
-  if (b.requestedSalaryRange) L.push(`Requested salary: ${t(b.requestedSalaryRange)}`);
+  L.push(`نام: ${t(b.fullName)}`);
+  if (cv.aboutMe) L.push(`دربارهٔ من: ${t(cv.aboutMe)}`);
+  if (cv.totalWorkExperience != null) L.push(`سابقهٔ کار کل: ${cv.totalWorkExperience} سال`);
+  if (b.residenceCity) L.push(`شهر: ${t(b.residenceCity)}${b.residenceProvince ? `, ${t(b.residenceProvince)}` : ""}`);
+  if (b.militaryServiceStatus) L.push(`وضعیت خدمت: ${t(b.militaryServiceStatus)}`);
+  if (b.requestedSalaryRange) L.push(`حقوق درخواستی: ${t(b.requestedSalaryRange)}`);
 
   const work = cv.listOfWorkExperiences ?? [];
   if (work.length) {
-    L.push("\nWORK EXPERIENCE:");
+    L.push("\nسوابق کاری:");
     for (const w of work) {
-      L.push(`- ${t(w.roleTitle)} at ${t(w.companyTitle)} (${t(w.dateRange)}${w.duration ? `, ${t(w.duration)}` : ""})` +
-        [w.seniorityLevel && `seniority: ${t(w.seniorityLevel)}`, w.industry && `industry: ${t(w.industry)}`, w.city && `city: ${t(w.city)}`].filter(Boolean).map((x) => `; ${x}`).join(""));
+      L.push(`- ${t(w.roleTitle)} در ${t(w.companyTitle)} (${t(w.dateRange)}${w.duration ? `, ${t(w.duration)}` : ""})` +
+        [w.seniorityLevel && `سطح: ${t(w.seniorityLevel)}`, w.industry && `صنعت: ${t(w.industry)}`, w.city && `شهر: ${t(w.city)}`].filter(Boolean).map((x) => `; ${x}`).join(""));
       if (w.description) L.push(`  ${t(w.description)}`);
     }
   }
   const cats = cv.listOfTotalWorkExperiencesInJobCategories ?? [];
-  if (cats.length) L.push("\nEXPERIENCE BY FIELD:", ...cats.map((c: any) => `- ${t(c.jobCategory)}: ${c.totalWorkExperiencesInJobCategory ?? c.experienceYears} years`));
+  if (cats.length) L.push("\nسابقه به تفکیک حوزه:", ...cats.map((c: any) => `- ${t(c.jobCategory)}: ${c.totalWorkExperiencesInJobCategory ?? c.experienceYears} سال`));
 
   const edu = cv.listOfEducations ?? [];
   if (edu.length) {
-    L.push("\nEDUCATION:");
+    L.push("\nتحصیلات:");
     for (const e of edu)
-      L.push(`- ${t(e.educationLevel)} ${t(e.educationField)}, ${t(e.universityName)} (${e.startYear ?? "?"}-${e.isStillStudying ? "now" : e.finishYear ?? "?"})${e.gpa ? `, GPA ${e.gpa}` : ""}`);
+      L.push(`- ${t(e.educationLevel)} ${t(e.educationField)}, ${t(e.universityName)} (${e.startYear ?? "?"}-${e.isStillStudying ? "اکنون" : e.finishYear ?? "?"})${e.gpa ? `، معدل ${e.gpa}` : ""}`);
   }
   const sw = cv.listOfSoftwareSkills ?? [];
-  if (sw.length) L.push("\nSOFTWARE SKILLS:", sw.map((s: any) => `${t(s.software)} (${t(s.skillLevel)})`).join(", "));
+  if (sw.length) L.push("\nمهارت‌های نرم‌افزاری:", sw.map((s: any) => `${t(s.software)} (${t(s.skillLevel)})`).join(", "));
   const custom = cv.listOfCustomSkills ?? [];
-  if (custom.length) L.push("\nOTHER SKILLS:", custom.map((s: any) => t(s)).join(", "));
+  if (custom.length) L.push("\nسایر مهارت‌ها:", custom.map((s: any) => t(s)).join(", "));
   const lang = cv.listOfLanguageSkills ?? [];
-  if (lang.length) L.push("\nLANGUAGES:", lang.map((s: any) => `${t(s.language)} (${t(s.skillLevel)})`).join(", "));
+  if (lang.length) L.push("\nزبان‌ها:", lang.map((s: any) => `${t(s.language)} (${t(s.skillLevel)})`).join(", "));
   const courses = cv.listOfCourses ?? [];
-  if (courses.length) L.push("\nCOURSES:", ...courses.map((c: any) => `- ${t(c.title ?? c.courseTitle ?? c.name)} ${t(c.institute ?? c.instituteName)}`.trim()));
+  if (courses.length) L.push("\nدوره‌ها:", ...courses.map((c: any) => `- ${t(c.title ?? c.courseTitle ?? c.name)} ${t(c.institute ?? c.instituteName)}`.trim()));
   const projects = cv.listOfAcademicExperiencesAndProjects ?? [];
-  if (projects.length) L.push("\nPROJECTS:", ...projects.map((p: any) => `- ${t(p.title)} ${t(p.description)}`.trim()));
+  if (projects.length) L.push("\nپروژه‌ها:", ...projects.map((p: any) => `- ${t(p.title)} ${t(p.description)}`.trim()));
   const awards = cv.listOfAwardsAndHonors ?? [];
-  if (awards.length) L.push("\nAWARDS:", ...awards.map((p: any) => `- ${t(p.title)}`));
+  if (awards.length) L.push("\nافتخارات:", ...awards.map((p: any) => `- ${t(p.title)}`));
   const cover = d?.coverLetter ?? d?.applicationCoverLetterSummary;
-  if (cover) L.push("\nCOVER LETTER:", typeof cover === "string" ? cover : t(cover.text ?? cover.content ?? JSON.stringify(cover)));
+  if (cover) L.push("\nنامهٔ همراه:", typeof cover === "string" ? cover : t(cover.text ?? cover.content ?? JSON.stringify(cover)));
   return L.join("\n");
 }
 

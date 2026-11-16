@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import type { Decision } from "./types.js";
+import type { Decision } from "./types";
 
 export interface Row {
   source: string;
@@ -29,6 +29,7 @@ export interface JobStats {
   accepted: number;
   rejected: number;
   errors: number;
+  pending: number;
   avg_score: number | null;
   last_processed: string | null;
 }
@@ -55,6 +56,36 @@ export class Db {
     // migrate older databases
     const have = new Set((this.db.prepare("PRAGMA table_info(applications)").all() as any[]).map((c) => c.name));
     for (const [col, type] of Object.entries(EXTRA_COLUMNS)) if (!have.has(col)) this.db.exec(`ALTER TABLE applications ADD COLUMN ${col} ${type}`);
+    this.db.exec(`CREATE TABLE IF NOT EXISTS chats (
+      source TEXT NOT NULL, job_id TEXT NOT NULL, messages_json TEXT NOT NULL, updated_at TEXT NOT NULL,
+      PRIMARY KEY (source, job_id))`);
+  }
+
+  /** Store an applicant seen in the job list without scoring it. Never overwrites a scored row. */
+  upsertListed(a: { source: string; id: string; name: string; job?: string; jobId?: string; extra?: unknown; profileUrl?: string; resumeUrl?: string; appliedAt?: string }) {
+    this.db
+      .prepare(
+        `INSERT INTO applications (source,id,name,job,job_id,decision,attempts,processed_at,extra_json,profile_url,resume_url,applied_at)
+         VALUES (?,?,?,?,?,'pending',0,?,?,?,?,?)
+         ON CONFLICT(source,id) DO UPDATE SET name=excluded.name, job=excluded.job, job_id=excluded.job_id,
+           extra_json=excluded.extra_json, profile_url=excluded.profile_url, resume_url=COALESCE(excluded.resume_url, resume_url),
+           applied_at=excluded.applied_at`,
+      )
+      .run(a.source, a.id, a.name, a.job ?? null, a.jobId ?? null, new Date().toISOString(), a.extra ? JSON.stringify(a.extra) : null, a.profileUrl ?? null, a.resumeUrl ?? null, a.appliedAt ?? null);
+  }
+
+  getChat(source: string, jobId: string): { role: "user" | "assistant"; content: string }[] {
+    const r = this.db.prepare("SELECT messages_json FROM chats WHERE source=? AND job_id=?").get(source, jobId) as { messages_json: string } | undefined;
+    return r ? JSON.parse(r.messages_json) : [];
+  }
+
+  saveChat(source: string, jobId: string, messages: { role: "user" | "assistant"; content: string }[]) {
+    this.db
+      .prepare(
+        `INSERT INTO chats (source,job_id,messages_json,updated_at) VALUES (?,?,?,?)
+         ON CONFLICT(source,job_id) DO UPDATE SET messages_json=excluded.messages_json, updated_at=excluded.updated_at`,
+      )
+      .run(source, jobId, JSON.stringify(messages), new Date().toISOString());
   }
 
   get(source: string, id: string): Row | undefined {
@@ -64,7 +95,7 @@ export class Db {
   /** Done = accepted/rejected, or errored too many times. */
   isDone(source: string, id: string, maxAttempts = 3): boolean {
     const r = this.get(source, id);
-    return !!r && (r.decision !== "error" || r.attempts >= maxAttempts);
+    return !!r && r.decision !== "pending" && (r.decision !== "error" || r.attempts >= maxAttempts);
   }
 
   save(r: {
@@ -103,15 +134,15 @@ export class Db {
   }
 
   listByJob(source: string, jobId: string): Row[] {
-    return this.db.prepare("SELECT * FROM applications WHERE source=? AND job_id=? ORDER BY score DESC NULLS LAST").all(source, jobId) as unknown as Row[];
+    return this.db.prepare("SELECT * FROM applications WHERE source=? AND job_id=? ORDER BY CASE decision WHEN 'accepted' THEN 0 WHEN 'rejected' THEN 1 WHEN 'error' THEN 2 ELSE 3 END, score DESC, applied_at DESC").all(source, jobId) as unknown as Row[];
   }
 
   jobStats(source: string): JobStats[] {
     return this.db
       .prepare(
         `SELECT job_id, COUNT(*) total,
-           SUM(decision='accepted') accepted, SUM(decision='rejected') rejected, SUM(decision='error') errors,
-           ROUND(AVG(CASE WHEN decision!='error' THEN score END),1) avg_score, MAX(processed_at) last_processed
+           SUM(decision='accepted') accepted, SUM(decision='rejected') rejected, SUM(decision='error') errors, SUM(decision='pending') pending,
+           ROUND(AVG(CASE WHEN decision IN ('accepted','rejected') THEN score END),1) avg_score, MAX(CASE WHEN decision!='pending' THEN processed_at END) last_processed
          FROM applications WHERE source=? AND job_id IS NOT NULL GROUP BY job_id`,
       )
       .all(source) as unknown as JobStats[];

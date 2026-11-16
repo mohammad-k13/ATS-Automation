@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import http from "node:http";
 import { test } from "node:test";
-import { LlmScorer, openAICompatComplete } from "../src/score.js";
+import { LlmScorer, openAICompatComplete } from "../src/score";
 
 test("OpenAI-compatible (OmniRoute) scorer: sends key/model, parses JSON reply, applies threshold", async () => {
   let seen: any = {};

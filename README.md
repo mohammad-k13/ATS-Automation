@@ -24,11 +24,16 @@ copy sources.example.yaml sources.yaml
 - Only applicants in status 10 (undecided) are pulled. The token expires after ~6 hours (you get a 🔐 alert).
 - **Jobvision blocks non-Iranian IPs** - run it from a machine in Iran (your PC or an Iranian VPS) and use `TELEGRAM_PROXY` for Telegram.
 
-## Dashboard
+## Dashboard (Next.js, Persian UI)
 ```bash
-npm run dashboard
+npm run dev
 ```
-Open http://localhost:3000. Jobs are loaded live from your Jobvision panel; press **Score resumes** on a job. Paste a fresh token with **Update token** when it expires (saved to `.env`).
+Open http://localhost:3000.
+- **Platforms** in the sidebar → active job posts with accepted/rejected %.
+- **Job page** → resumes tab (score all new / selected / one, re-score, filters, resume details with strong/weak points) and settings tab (describe the job in plain words → AI drafts the criteria → edit → save; auto-run toggle). The **hiring assistant chat** on the side answers questions about the job and its resumes.
+- **منابع و توکن‌ها** → edit `sources.yaml`, update platform tokens.
+
+For daily use: `npm run build` once, then `npm start` (faster than dev mode).
 
 ## Usage
 ```bash

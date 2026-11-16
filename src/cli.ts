@@ -1,14 +1,15 @@
 import "dotenv/config";
 import { parseArgs } from "node:util";
 import cron from "node-cron";
-import { loadCriteria } from "./criteria.js";
-import { Db } from "./db.js";
-import { runOnce } from "./pipeline.js";
-import { anthropicComplete, KeywordScorer, LlmScorer, openAICompatComplete, type Scorer } from "./score.js";
-import { loadSources } from "./sources/index.js";
-import { HttpSource } from "./sources/http-source.js";
-import type { Source } from "./types.js";
-import { ConsoleNotifier, TelegramNotifier, type Notifier } from "./telegram.js";
+import { loadCriteria } from "./criteria";
+import { Db } from "./db";
+import { runOnce } from "./pipeline";
+import { aiInfo, getScorer } from "./ai";
+import { KeywordScorer, type Scorer } from "./score";
+import { loadSources } from "./sources/index";
+import { HttpSource } from "./sources/http-source";
+import type { Source } from "./types";
+import { ConsoleNotifier, TelegramNotifier, type Notifier } from "./telegram";
 
 const env = process.env;
 const { values: flags, positionals } = parseArgs({
@@ -23,18 +24,10 @@ const { values: flags, positionals } = parseArgs({
 const [cmd = "help", arg1, arg2] = positionals;
 
 function makeScorer(): Scorer {
-  if (!flags["no-llm"]) {
-    const provider = (env.AI_PROVIDER || (env.OMNIROUTE_BASE_URL ? "omniroute" : env.ANTHROPIC_API_KEY ? "anthropic" : "")).toLowerCase();
-    if (provider === "omniroute") {
-      if (!env.OMNIROUTE_BASE_URL || !env.OMNIROUTE_MODEL) throw new Error("Set OMNIROUTE_BASE_URL and OMNIROUTE_MODEL in .env");
-      console.log(`ℹ Scoring with OmniRoute (${env.OMNIROUTE_MODEL})`);
-      return new LlmScorer(openAICompatComplete(env.OMNIROUTE_BASE_URL, env.OMNIROUTE_API_KEY ?? "", env.OMNIROUTE_MODEL));
-    }
-    if (provider === "anthropic" && env.ANTHROPIC_API_KEY)
-      return new LlmScorer(anthropicComplete(env.ANTHROPIC_API_KEY, env.ANTHROPIC_MODEL || "claude-sonnet-5-5"));
-  }
-  console.log("ℹ Using keyword-only scoring (no AI configured, or --no-llm).");
-  return new KeywordScorer();
+  if (flags["no-llm"]) return new KeywordScorer();
+  const ai = aiInfo();
+  console.log(ai.provider === "keyword" ? "ℹ Using keyword-only scoring (no AI configured)." : `ℹ Scoring with ${ai.provider} (${ai.model})`);
+  return getScorer();
 }
 
 function makeNotifier(dry: boolean): Notifier {

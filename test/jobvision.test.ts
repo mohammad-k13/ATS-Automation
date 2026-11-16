@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import http from "node:http";
 import { test } from "node:test";
-import { Db } from "../src/db.js";
-import { runOnce } from "../src/pipeline.js";
-import { KeywordScorer } from "../src/score.js";
-import { cvToText, JobvisionSource, jwtExpiry } from "../src/sources/jobvision-source.js";
-import type { Notifier } from "../src/telegram.js";
+import { Db } from "../src/db";
+import { runOnce } from "../src/pipeline";
+import { KeywordScorer } from "../src/score";
+import { cvToText, JobvisionSource, jwtExpiry } from "../src/sources/jobvision-source";
+import type { Notifier } from "../src/telegram";
 
 // Anonymized fixtures with the same shape as real employerapi.jobvision.ir responses.
 const ok = (data: unknown) => JSON.stringify({ isSuccess: true, statusCode: 0, message: "ok", data });
@@ -54,9 +54,9 @@ const cfg = (token: string) => ({
 
 test("cvToText excludes gender, age, marital status and contact info", () => {
   const text = cvToText(details(["MSP"]));
-  assert.match(text, /مدیر تولید at گروه صنعتی/);
+  assert.match(text, /مدیر تولید در گروه صنعتی/);
   assert.match(text, /MSP/);
-  assert.match(text, /Military service: انجام شده/);
+  assert.match(text, /وضعیت خدمت: انجام شده/);
   for (const banned of ["مرد", "44", "متاهل", "secret@example.com", "0912"]) assert.ok(!text.includes(banned), `leaked: ${banned}`);
 });
 

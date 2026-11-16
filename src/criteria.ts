@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import YAML from "yaml";
 import { z } from "zod";
-import type { Application, Criteria } from "./types.js";
+import type { Application, Criteria } from "./types";
 
 const CriteriaSchema = z.object({
   name: z.string(),

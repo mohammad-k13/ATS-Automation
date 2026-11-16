@@ -1,7 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
-import { httpFetch } from "./http.js";
-import type { Application, Criteria, ScoreResult } from "./types.js";
+import { httpFetch } from "./http";
+import type { Application, Criteria, ScoreResult } from "./types";
 
 export interface Scorer {
   score(app: Application, resumeText: string, c: Criteria): Promise<ScoreResult>;
@@ -69,37 +69,46 @@ const LlmResult = z.object({
   summary: z.string(),
 });
 
-const SYSTEM = `You are a strict, fair technical recruiter screening resumes for a company in Iran.
+const SYSTEM = `You are a strict, fair recruiter screening resumes for a company in Iran.
 Resumes may be in Persian or English. Judge only on evidence in the resume; do not reward keyword stuffing.
 Do not consider gender, age, religion, ethnicity, marital status or photo — only skills, experience and the employer's job-related instructions.
+Write every text field IN PERSIAN (فارسی), short and concrete: each list item max ~8 words, summary max 2 sentences.
 Reply with ONE JSON object only, no prose, matching:
 {"candidateName": string|null, "yearsExperience": number|null (total relevant professional years),
- "score": 0-100 (fit for this job), "matched": [requirements clearly evidenced], "missing": [must-haves NOT evidenced],
+ "score": 0-100 (fit for this job), "matched": [strong points: requirements clearly evidenced],
+ "missing": [weak points: must-haves or important skills NOT evidenced],
  "redFlags": [concrete concerns, e.g. unexplained gaps, job hopping, mismatch with instructions],
- "summary": "2-3 sentence English summary of the candidate and fit"}
-Scoring guide: 85+ strong hire-interview, 70-84 good, 50-69 partial, <50 poor. Missing any must-have usually caps the score at 65.`;
+ "summary": "1-2 sentence Persian summary of the candidate and fit"}
+Scoring guide: 85+ strong, 70-84 good, 50-69 partial, <50 poor. Missing any must-have usually caps the score at 65.`;
 
-/** Something that turns (system, user) into model text. */
+export interface ChatMessage {
+  role: "user" | "assistant";
+  content: string;
+}
+/** Multi-turn chat: (system, messages) -> model text. */
+export type Chat = (system: string, messages: ChatMessage[], maxTokens?: number) => Promise<string>;
+/** Single-turn helper kept for the scorer. */
 export type Complete = (system: string, user: string) => Promise<string>;
+export const toComplete = (chat: Chat): Complete => (system, user) => chat(system, [{ role: "user", content: user }]);
 
-export function anthropicComplete(apiKey: string, model: string): Complete {
+export function anthropicChat(apiKey: string, model: string): Chat {
   const client = new Anthropic({ apiKey });
-  return async (system, user) => {
-    const msg = await client.messages.create({ model, max_tokens: 1500, system, messages: [{ role: "user", content: user }] });
+  return async (system, messages, maxTokens = 2000) => {
+    const msg = await client.messages.create({ model, max_tokens: maxTokens, system, messages });
     return msg.content.map((b) => (b.type === "text" ? b.text : "")).join("");
   };
 }
 
 /** Any OpenAI-compatible endpoint: OmniRoute, OpenRouter, LiteLLM, a local server... */
-export function openAICompatComplete(baseUrl: string, apiKey: string, model: string): Complete {
+export function openAICompatChat(baseUrl: string, apiKey: string, model: string): Chat {
   let base = baseUrl.replace(/\/+$/, "");
   if (!/\/v\d+$/.test(base)) base += "/v1";
-  return async (system, user) => {
+  return async (system, messages, maxTokens = 2000) => {
     const res = await httpFetch(`${base}/chat/completions`, {
       method: "POST",
       headers: { "content-type": "application/json", ...(apiKey ? { authorization: `Bearer ${apiKey}` } : {}) },
-      body: JSON.stringify({ model, temperature: 0, max_tokens: 1500, messages: [{ role: "system", content: system }, { role: "user", content: user }] }),
-    }, undefined, 120_000);
+      body: JSON.stringify({ model, temperature: 0.2, max_tokens: maxTokens, messages: [{ role: "system", content: system }, ...messages] }),
+    }, undefined, 180_000);
     const body = await res.text();
     if (!res.ok) throw new Error(`AI router HTTP ${res.status} at ${base}/chat/completions: ${body.slice(0, 300)}`);
     const json = JSON.parse(body);
@@ -108,6 +117,9 @@ export function openAICompatComplete(baseUrl: string, apiKey: string, model: str
     return content;
   };
 }
+
+export const anthropicComplete = (apiKey: string, model: string) => toComplete(anthropicChat(apiKey, model));
+export const openAICompatComplete = (baseUrl: string, apiKey: string, model: string) => toComplete(openAICompatChat(baseUrl, apiKey, model));
 
 export class LlmScorer implements Scorer {
   constructor(private complete: Complete) {}

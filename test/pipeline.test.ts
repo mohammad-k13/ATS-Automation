@@ -1,13 +1,13 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { pickCriteria } from "../src/criteria.js";
-import { Db } from "../src/db.js";
-import { runOnce } from "../src/pipeline.js";
-import { hardFilterFailures, hasKeyword, keywordScore, KeywordScorer } from "../src/score.js";
-import { HttpSource } from "../src/sources/http-source.js";
-import type { Notifier } from "../src/telegram.js";
-import type { Application, Criteria, Source } from "../src/types.js";
-import { getPath, interpolate } from "../src/util.js";
+import { pickCriteria } from "../src/criteria";
+import { Db } from "../src/db";
+import { runOnce } from "../src/pipeline";
+import { hardFilterFailures, hasKeyword, keywordScore, KeywordScorer } from "../src/score";
+import { HttpSource } from "../src/sources/http-source";
+import type { Notifier } from "../src/telegram";
+import type { Application, Criteria, Source } from "../src/types";
+import { getPath, interpolate } from "../src/util";
 
 const crit: Criteria = {
   name: "backend",
@@ -21,7 +21,7 @@ const crit: Criteria = {
 test("util: getPath and interpolate", () => {
   assert.equal(getPath({ a: { b: [{ c: 5 }] } }, "a.b.0.c"), 5);
   assert.deepEqual(getPath([1], "."), [1]);
-  assert.deepEqual(interpolate({ h: "Bearer ${T}" }, { T: "x" }), { h: "Bearer x" });
+  assert.deepEqual(interpolate({ h: "Bearer ${T}" }, { T: "x" } as unknown as NodeJS.ProcessEnv), { h: "Bearer x" });
 });
 
 test("keyword matching handles case, boundaries and Persian variants", () => {

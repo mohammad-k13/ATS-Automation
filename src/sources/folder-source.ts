@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { z } from "zod";
-import type { Application, ResumeFile, Source } from "../types.js";
+import type { Application, ResumeFile, Source } from "../types";
 
 /** Reads resumes from a local folder: <dir>/<job title>/<file>.pdf|docx|txt. Used for testing. */
 export const FolderSourceConfig = z.object({

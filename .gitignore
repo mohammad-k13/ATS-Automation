@@ -7,3 +7,7 @@ data/*
 !data/.gitkeep
 *.har
 sources.yaml
+
+.next/
+next-env.d.ts
+*.tsbuildinfo

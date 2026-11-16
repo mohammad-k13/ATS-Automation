@@ -1,7 +1,7 @@
 import { z } from "zod";
-import { httpFetch } from "../http.js";
-import type { Application, ResumeFile, Source } from "../types.js";
-import { getPath, sleep } from "../util.js";
+import { httpFetch } from "../http";
+import type { Application, ResumeFile, Source } from "../types";
+import { getPath, sleep } from "../util";
 
 /**
  * Generic source driven by sources.yaml: point it at the employer-panel endpoint you found in

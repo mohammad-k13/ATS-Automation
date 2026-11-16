@@ -50,4 +50,4 @@ export interface ScoreResult {
   method: "llm" | "keyword";
 }
 
-export type Decision = "accepted" | "rejected" | "error";
+export type Decision = "accepted" | "rejected" | "error" | "pending";
