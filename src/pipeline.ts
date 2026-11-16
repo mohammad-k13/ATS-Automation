@@ -4,7 +4,7 @@ import { resumeToText } from "./parse";
 import type { Scorer } from "./score";
 import { AuthError } from "./sources/http-source";
 import type { Notifier } from "./telegram";
-import type { Application, Criteria, ResumeFile, Source } from "./types";
+import { decisionOf, type Application, type Criteria, type ResumeFile, type Source } from "./types";
 import { escapeHtml } from "./util";
 
 export interface RunOptions {
@@ -67,7 +67,7 @@ export async function runOnce(o: RunOptions): Promise<RunSummary> {
         if (text.length < 50) throw new Error("resume text is empty (scanned image PDF?)");
 
         const r = await o.scorer.score(app, text, criteria);
-        const reason = r.hardFilterFailures.length ? r.hardFilterFailures.join("; ") : `score ${r.score} < ${criteria.threshold}`;
+        const reason = r.hardFilterFailures.length ? r.hardFilterFailures.join("; ") : r.partial ? `تایید نسبی (${r.score})` : `score ${r.score} < ${criteria.threshold}`;
         log(`  ${r.pass ? "✔" : "·"} ${app.name} [${criteria.name}] ${r.score}/100 ${r.pass ? "ACCEPTED" : `rejected (${reason})`}`);
 
         let notified = false;
@@ -81,7 +81,7 @@ export async function runOnce(o: RunOptions): Promise<RunSummary> {
           sum.rejected.push({ app, score: r.score, reason });
         }
         if (!o.dryRun)
-          o.db.save({ ...rowFields(app, text), decision: r.pass ? "accepted" : "rejected", score: r.score, result: r, notified });
+          o.db.save({ ...rowFields(app, text), decision: decisionOf(r), score: r.score, result: r, notified });
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
         log(`  ✖ ${app.name}: ${msg}`);

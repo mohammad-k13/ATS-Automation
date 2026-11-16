@@ -74,7 +74,7 @@ function ReportView() {
               {rep.rows.map((r, i) => (
                 <tr key={i}>
                   <td className="num">{(i + 1).toLocaleString("fa-IR")}</td>
-                  {COLS.map(([k]) => <td key={k} className={k === "name" ? "strong" : k === "phone" ? "nowrap" : k === "score" ? `score-cell ${r.status === "قبول" ? "ok" : r.status === "رد" ? "bad" : ""}` : ""}>{cell(r, k)}</td>)}
+                  {COLS.map(([k]) => <td key={k} className={k === "name" ? "strong" : k === "phone" ? "nowrap" : k === "score" ? `score-cell ${r.status === "قبول" ? "ok" : r.status === "تایید نسبی" ? "partial" : r.status === "رد" ? "bad" : ""}` : ""}>{cell(r, k)}</td>)}
                 </tr>
               ))}
             </tbody>

@@ -15,7 +15,10 @@ function useCrumbs(): { crumbs: Crumb[]; parent: string | null } {
   // job titles come from the cached jobs list (no extra loading)
   const jobs = useApi<{ jobs: { id: string; title: string }[] }>(src && (params.id || search.get("job")) ? `platforms/${src}/jobs` : null, { revalidateOnFocus: false, revalidateIfStale: false });
   const jobId = params.id ?? search.get("job") ?? undefined;
-  const jobTitle = search.get("t") || jobs.data?.jobs.find((j) => j.id === jobId)?.title || (jobId ? `آگهی ${jobId}` : "");
+  // same keys the pages use, so these come from the cache (no extra requests)
+  const apps = useApi<{ job: string | null }[]>(src && jobId ? `platforms/${src}/jobs/${jobId}/applications` : null, { revalidateOnFocus: false });
+  const jobTitle =
+    search.get("t") || jobs.data?.jobs.find((j) => j.id === jobId)?.title || apps.data?.find((a) => a.job)?.job || (jobId ? `آگهی ${jobId}` : "");
 
   if (path.startsWith("/settings")) return { crumbs: [{ label: "تنظیمات و اتصال‌ها" }], parent: "/" };
   if (path.startsWith("/report")) {

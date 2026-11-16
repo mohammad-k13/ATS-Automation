@@ -15,7 +15,7 @@ import { AuthError } from "./sources/http-source";
 import { JobvisionSource, type JobPost } from "./sources/jobvision-source";
 import { credentials, ensureToken, hasCredentials, loginAndSave, saveCredentials, tokenInfo, tokenKey, writeEnv } from "./auth/token";
 export { tokenInfo };
-import type { Application, Criteria, Source } from "./types";
+import { decisionOf, defaultPartial, type Application, type Criteria, type Source } from "./types";
 
 const env = process.env;
 const SOURCES_FILE = () => env.SOURCES_FILE || "sources.yaml";
@@ -136,6 +136,7 @@ const jobCriteriaFile = (jobId: string) => path.join(CRITERIA_DIR(), `job-${jobI
 
 export const CriteriaInput = z.object({
   threshold: z.coerce.number().min(0).max(100).default(70),
+  partialThreshold: z.coerce.number().min(0).max(100).nullable().optional(),
   mustHave: z.array(z.string().trim().min(1)).default([]),
   niceToHave: z.array(z.string().trim().min(1)).default([]),
   hardFilters: z
@@ -198,7 +199,7 @@ function jobContextText(ctx: Awaited<ReturnType<typeof jobContext>>) {
     ctx.meta.adText && `متن آگهیِ منتشرشده:\n${ctx.meta.adText.slice(0, 6000)}`,
     ctx.meta.description && `توضیحات کارفرما دربارهٔ این شغل:\n${ctx.meta.description.slice(0, 4000)}`,
     c
-      ? `شرایط غربالگری: حداقل امتیاز قبولی ${c.threshold}؛ الزامی: ${c.mustHave.join("، ") || "-"}؛ امتیاز اضافه: ${c.niceToHave.join("، ") || "-"}${c.hardFilters.minYears != null ? `؛ حداقل سابقه ${c.hardFilters.minYears} سال` : ""}${c.instructions ? `\nتوضیحات غربالگری: ${c.instructions}` : ""}`
+      ? `شرایط غربالگری: حداقل امتیاز قبولی ${c.threshold}؛ تایید نسبی از ${c.partialThreshold}؛ الزامی: ${c.mustHave.join("، ") || "-"}؛ امتیاز اضافه: ${c.niceToHave.join("، ") || "-"}${c.hardFilters.minYears != null ? `؛ حداقل سابقه ${c.hardFilters.minYears} سال` : ""}${c.instructions ? `\nتوضیحات غربالگری: ${c.instructions}` : ""}`
       : "شرایط غربالگری هنوز ذخیره نشده.",
   ].filter(Boolean).join("\n\n");
 }
@@ -213,7 +214,7 @@ export function getJobSettings(src: string, jobId: string) {
   const cfg = rawSourceConfig(src);
   return {
     criteria: criteria
-      ? { threshold: criteria.threshold, mustHave: criteria.mustHave, niceToHave: criteria.niceToHave, hardFilters: { minYears: criteria.hardFilters.minYears ?? null, requireAny: criteria.hardFilters.requireAny ?? [], rejectIfAny: criteria.hardFilters.rejectIfAny ?? [] }, instructions: criteria.instructions ?? "" }
+      ? { threshold: criteria.threshold, partialThreshold: criteria.partialThreshold, mustHave: criteria.mustHave, niceToHave: criteria.niceToHave, hardFilters: { minYears: criteria.hardFilters.minYears ?? null, requireAny: criteria.hardFilters.requireAny ?? [], rejectIfAny: criteria.hardFilters.rejectIfAny ?? [] }, instructions: criteria.instructions ?? "" }
       : null,
     criteriaKind: kind,
     criteriaName: criteria?.name ?? null,
@@ -232,6 +233,7 @@ export function saveJobCriteria(src: string, jobId: string, input: unknown, jobT
     name: `job-${jobId}`,
     match: { jobIds: [String(jobId)] },
     threshold: c.threshold,
+    partialThreshold: Math.min(c.partialThreshold ?? defaultPartial(c.threshold), c.threshold),
     mustHave: c.mustHave,
     niceToHave: c.niceToHave,
     hardFilters: {
@@ -256,6 +258,7 @@ export async function draftCriteria(src: string, jobId: string, jobTitle: string
   const system = `You turn an employer's plain description of a job into screening rules for an ATS in Iran.
 Reply with ONE JSON object only:
 {"threshold": number 0-100 (default 70; stricter if the employer sounds strict),
+ "partialThreshold": number below threshold for "partial approval / maybe" candidates (default threshold-20),
  "mustHave": [short skill/experience phrases that are truly required, in the language candidates use in resumes - usually Persian, keep tool names in English],
  "niceToHave": [bonus phrases],
  "hardFilters": {"minYears": number|null, "requireAny": [], "rejectIfAny": []},
@@ -303,7 +306,7 @@ export async function listJobs(src: string, fresh = false) {
       ...j,
       criteriaKind: criteriaFor(src, j.id, j.title).kind,
       scheduled: scheduled.has(j.id),
-      stats: st ? { total: st.total, accepted: st.accepted, rejected: st.rejected, errors: st.errors, pending: st.pending, avgScore: st.avg_score, lastProcessed: st.last_processed } : null,
+      stats: st ? { total: st.total, accepted: st.accepted, partial: st.partial, rejected: st.rejected, errors: st.errors, pending: st.pending, avgScore: st.avg_score, lastProcessed: st.last_processed } : null,
       task: state().tasks.get(`${src}:${j.id}`) ?? null,
     };
   });
@@ -402,7 +405,7 @@ export async function startScoring(src: string, jobId: string, opts: { ids?: str
         const text = s.getResumeText ? await s.getResumeText(app) : "";
         if (text.length < 50) throw new Error("متن رزومه خالی است");
         const res = await scorer.score(app, text, criteria);
-        db().save({ source: src, id: app.id, name: app.name, job: app.jobTitle, jobId: app.jobId, decision: res.pass ? "accepted" : "rejected", score: res.score, result: res, resumeText: text, extra: app.extra, profileUrl: app.profileUrl, resumeUrl: app.resumeUrl, appliedAt: app.appliedAt });
+        db().save({ source: src, id: app.id, name: app.name, job: app.jobTitle, jobId: app.jobId, decision: decisionOf(res), score: res.score, result: res, resumeText: text, extra: app.extra, profileUrl: app.profileUrl, resumeUrl: app.resumeUrl, appliedAt: app.appliedAt });
         log(`${app.name}: ${res.score}`);
       } catch (e) {
         // token expired mid-run: log in again once and retry this resume
@@ -443,7 +446,7 @@ export async function startScoring(src: string, jobId: string, opts: { ids?: str
 function candidateLine(r: Row) {
   const res = parse(r.result_json);
   const ex = parse(r.extra_json) ?? {};
-  const base = `- ${r.name} | وضعیت: ${r.decision}${r.score != null ? ` | امتیاز: ${r.score}` : ""} | سابقه: ${ex.totalWorkExperienceYears ?? "?"} سال | آخرین شغل: ${ex.lastJob ?? "-"} | شهر: ${ex.city ?? "-"} | حقوق درخواستی: ${ex.requestedSalary ?? "-"}`;
+  const base = `- ${r.name} | وضعیت: ${STATUS_FA[r.decision] ?? r.decision}${r.score != null ? ` | امتیاز: ${r.score}` : ""} | سابقه: ${ex.totalWorkExperienceYears ?? "?"} سال | آخرین شغل: ${ex.lastJob ?? "-"} | شهر: ${ex.city ?? "-"} | حقوق درخواستی: ${ex.requestedSalary ?? "-"}`;
   if (!res) return base;
   return `${base}\n  خلاصه: ${res.summary}\n  نقاط قوت: ${(res.matched ?? []).join("، ")}\n  نقاط ضعف: ${(res.missing ?? []).join("، ")}${res.redFlags?.length ? `\n  هشدارها: ${res.redFlags.join("، ")}` : ""}`;
 }
@@ -474,7 +477,7 @@ export async function chatAboutJob(src: string, jobId: string, message: string, 
   }
 
   const n = (d: string) => rows.filter((r) => r.decision === d).length;
-  const scored = rows.filter((r) => r.decision === "accepted" || r.decision === "rejected");
+  const scored = rows.filter((r) => r.decision === "accepted" || r.decision === "partial" || r.decision === "rejected");
   const avg = scored.length ? Math.round(scored.reduce((x, r) => x + (r.score ?? 0), 0) / scored.length) : null;
 
   const system = `تو دستیار استخدام یک کارفرما هستی و دربارهٔ یک آگهی شغلی و رزومه‌های دریافتی آن با او گفتگو می‌کنی.
@@ -487,7 +490,7 @@ export async function chatAboutJob(src: string, jobId: string, message: string, 
 ${jobContextText(ctx)}
 
 ## رزومه‌ها
-تعداد کل: ${rows.length} · قبول: ${n("accepted")} · رد: ${n("rejected")} · بررسی‌نشده: ${n("pending")} · خطا: ${n("error")}${avg != null ? ` · میانگین امتیاز: ${avg}` : ""}
+تعداد کل: ${rows.length} · قبول: ${n("accepted")} · تایید نسبی: ${n("partial")} · رد: ${n("rejected")} · بررسی‌نشده: ${n("pending")} · خطا: ${n("error")}${avg != null ? ` · میانگین امتیاز: ${avg}` : ""}
 ${rows.slice(0, 200).map(candidateLine).join("\n")}
 
 ${resumes.length ? `## جزئیات رزومه‌های مورد بحث\n${resumes.join("\n\n")}` : ""}`;
@@ -592,7 +595,7 @@ export function setJobUnit(src: string, jobId: string, unit: string) {
   return { unit: db().getUnit(src, jobId) };
 }
 
-const STATUS_FA: Record<string, string> = { accepted: "قبول", rejected: "رد", pending: "بررسی‌نشده", error: "خطا" };
+const STATUS_FA: Record<string, string> = { accepted: "قبول", partial: "تایید نسبی", rejected: "رد", pending: "بررسی‌نشده", error: "خطا" };
 const PLATFORM_FA: Record<string, string> = { jobvision: "جاب‌ویژن", jobinja: "جابینجا" };
 
 export function report(src: string, q: { jobId?: string; status?: string; ids?: string }) {
@@ -613,7 +616,7 @@ export function report(src: string, q: { jobId?: string; status?: string; ids?: 
         jobTitle: r.job ?? "",
         resumeType: ex.resumeType ?? (r.resume_url ? "فایل رزومهٔ شخصی" : "پروفایل جاب‌ویژن"),
         status: STATUS_FA[r.decision] ?? r.decision,
-        score: r.decision === "accepted" || r.decision === "rejected" ? r.score : null,
+        score: r.decision === "accepted" || r.decision === "partial" || r.decision === "rejected" ? r.score : null,
       };
     }),
   };

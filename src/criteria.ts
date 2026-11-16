@@ -2,12 +2,13 @@ import fs from "node:fs";
 import path from "node:path";
 import YAML from "yaml";
 import { z } from "zod";
-import type { Application, Criteria } from "./types";
+import { defaultPartial, type Application, type Criteria } from "./types";
 
 const CriteriaSchema = z.object({
   name: z.string(),
   match: z.object({ jobIds: z.array(z.coerce.string()).optional(), titleIncludes: z.array(z.string()).optional() }).default({}),
   threshold: z.number().min(0).max(100).default(70),
+  partialThreshold: z.number().min(0).max(100).optional(),
   mustHave: z.array(z.string()).default([]),
   niceToHave: z.array(z.string()).default([]),
   hardFilters: z
@@ -25,7 +26,8 @@ export function loadCriteria(dir: string): Criteria[] {
     .map((f) => {
       const parsed = CriteriaSchema.safeParse(YAML.parse(fs.readFileSync(path.join(dir, f), "utf8")));
       if (!parsed.success) throw new Error(`Invalid criteria file ${f}: ${parsed.error.message}`);
-      return parsed.data as Criteria;
+      const c = parsed.data;
+      return { ...c, partialThreshold: Math.min(c.partialThreshold ?? defaultPartial(c.threshold), c.threshold) } as Criteria;
     });
 }
 

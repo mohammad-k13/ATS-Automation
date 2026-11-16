@@ -9,13 +9,13 @@ import { api, fa, faDate, pct, platformName } from "../../../../lib/api";
 import { refresh as refreshCache, Updating, useApi } from "../../../../lib/cache";
 
 interface App {
-  id: string; name: string; job: string | null; decision: "accepted" | "rejected" | "error" | "pending";
+  id: string; name: string; job: string | null; decision: "accepted" | "partial" | "rejected" | "error" | "pending";
   score: number | null; error: string | null; result: any; extra: any; profileUrl: string | null; appliedAt: string | null; processedAt: string | null;
 }
 interface Task { running: boolean; done: number; total: number; current: string | null; errors: number; error?: string; log: string[] }
 
-const DEC: Record<App["decision"], [string, string]> = { accepted: ["ok", "قبول"], rejected: ["rej", "رد"], error: ["warn", "خطا"], pending: ["", "بررسی‌نشده"] };
-const FILTERS: [string, string][] = [["all", "همه"], ["accepted", "قبول"], ["rejected", "رد"], ["pending", "بررسی‌نشده"], ["error", "خطا"]];
+const DEC: Record<App["decision"], [string, string]> = { accepted: ["ok", "قبول"], partial: ["partial", "تایید نسبی"], rejected: ["rej", "رد"], error: ["warn", "خطا"], pending: ["", "بررسی‌نشده"] };
+const FILTERS: [string, string][] = [["all", "همه"], ["accepted", "قبول"], ["partial", "تایید نسبی"], ["rejected", "رد"], ["pending", "بررسی‌نشده"], ["error", "خطا"]];
 
 function JobPage() {
   const { src, id } = useParams<{ src: string; id: string }>();
@@ -66,13 +66,13 @@ function JobPage() {
   };
 
   const counts = useMemo(() => {
-    const c: Record<string, number> = { all: 0, accepted: 0, rejected: 0, pending: 0, error: 0 };
+    const c: Record<string, number> = { all: 0, accepted: 0, partial: 0, rejected: 0, pending: 0, error: 0 };
     (apps ?? []).forEach((a) => { c.all++; c[a.decision]++; });
     return c;
   }, [apps]);
-  const scored = counts.accepted + counts.rejected;
+  const scored = counts.accepted + counts.partial + counts.rejected;
   const avg = useMemo(() => {
-    const s = (apps ?? []).filter((a) => a.decision === "accepted" || a.decision === "rejected").map((a) => a.score ?? 0);
+    const s = (apps ?? []).filter((a) => a.decision === "accepted" || a.decision === "partial" || a.decision === "rejected").map((a) => a.score ?? 0);
     return s.length ? Math.round(s.reduce((x, y) => x + y, 0) / s.length) : null;
   }, [apps]);
   const list = (apps ?? []).filter((a) => filter === "all" || a.decision === filter);
@@ -110,6 +110,7 @@ function JobPage() {
               <div className="stats">
                 <div className="panel stat"><div className="v">{fa(counts.all)}</div><div className="l">کل رزومه‌ها</div></div>
                 <div className="panel stat"><div className="v" style={{ color: "var(--ok)" }}>{fa(pct(counts.accepted, scored))}٪</div><div className="l">قبول ({fa(counts.accepted)})</div></div>
+                <div className="panel stat"><div className="v" style={{ color: "var(--warn)" }}>{fa(pct(counts.partial, scored))}٪</div><div className="l">تایید نسبی ({fa(counts.partial)})</div></div>
                 <div className="panel stat"><div className="v" style={{ color: "var(--rej)" }}>{fa(pct(counts.rejected, scored))}٪</div><div className="l">رد ({fa(counts.rejected)})</div></div>
                 <div className="panel stat"><div className="v">{fa(avg)}</div><div className="l">میانگین امتیاز</div></div>
               </div>
@@ -166,9 +167,9 @@ function JobPage() {
                         return (
                           <tr key={a.id} className={sel.has(a.id) ? "sel" : ""} onClick={() => setOpen(a.id)}>
                             <td onClick={(e) => e.stopPropagation()}><input type="checkbox" checked={sel.has(a.id)} onChange={() => toggle(a.id)} /></td>
-                            <td>{a.score != null && a.decision !== "pending" ? <span className={`score ${a.decision === "accepted" ? "ok" : "rej"}`}>{fa(a.score)}</span> : <span className="faint">—</span>}</td>
+                            <td>{a.score != null && a.decision !== "pending" ? <span className={`score ${a.decision === "accepted" ? "ok" : a.decision === "partial" ? "partial" : "rej"}`}>{fa(a.score)}</span> : <span className="faint">—</span>}</td>
                             <td>
-                              <div className="row wrap"><b>{a.name}</b><span className={`badge ${cls}`}>{label}</span></div>
+                              <div className="row wrap"><b>{a.name}</b><span className={`badge ${cls}`}>{label}</span>{a.extra?.experienceAlerts?.length > 0 && <span className="alert-count" title={a.extra.experienceAlerts.join("\n")}>⚠ {fa(a.extra.experienceAlerts.length)}</span>}</div>
                               <div className="small muted">{[a.extra?.lastJob, a.extra?.totalWorkExperienceYears != null ? `${fa(a.extra.totalWorkExperienceYears)} سال سابقه` : null].filter(Boolean).join(" · ")}</div>
                             </td>
                             <td className="sum">{a.result?.summary ?? (a.decision === "error" ? <span className="error-text">{a.error}</span> : <span className="faint">ارسال {faDate(a.appliedAt)}</span>)}</td>

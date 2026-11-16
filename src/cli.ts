@@ -156,7 +156,7 @@ async function main() {
       const sc = makeScorer();
       const r = await sc.score({ source: "test", id: "1", name: "Test", jobTitle: "Backend Developer" },
         "Backend developer, 4 years Node.js, TypeScript and PostgreSQL at an e-commerce company.",
-        { name: "test", match: {}, threshold: 70, mustHave: ["Node.js", "PostgreSQL"], niceToHave: ["Docker"], hardFilters: {} });
+        { name: "test", match: {}, threshold: 70, partialThreshold: 50, mustHave: ["Node.js", "PostgreSQL"], niceToHave: ["Docker"], hardFilters: {} });
       console.log(JSON.stringify(r, null, 2));
       break;
     }

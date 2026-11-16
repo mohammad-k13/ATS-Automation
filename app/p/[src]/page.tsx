@@ -8,7 +8,7 @@ import { mutate, refresh, Updating, useApi } from "../../lib/cache";
 interface Job {
   id: string; title: string; city: string | null; timeDescription: string | null;
   criteriaKind: "job" | "matched" | "default" | "none"; scheduled: boolean;
-  stats: { total: number; accepted: number; rejected: number; errors: number; pending: number; avgScore: number | null; lastProcessed: string | null } | null;
+  stats: { total: number; accepted: number; partial: number; rejected: number; errors: number; pending: number; avgScore: number | null; lastProcessed: string | null } | null;
   task: { running: boolean; done: number; total: number } | null;
 }
 interface JobsResp { jobs: Job[]; fetchedAt: string | null; error: string | null }
@@ -79,7 +79,7 @@ export default function JobsPage() {
         <div className="panel joblist">
           {list.map((j) => {
             const s = j.stats;
-            const scored = s ? s.accepted + s.rejected : 0;
+            const scored = s ? s.accepted + (s.partial ?? 0) + s.rejected : 0;
             const [cls, label] = CRIT[j.criteriaKind];
             return (
               <Link key={j.id} href={`/p/${src}/jobs/${j.id}?t=${encodeURIComponent(j.title)}`} className="jobrow">
@@ -96,11 +96,13 @@ export default function JobsPage() {
                     <>
                       <div className="meter">
                         <div className="a" style={{ width: `${pct(s.accepted, s.total)}%` }} />
+                        <div className="p" style={{ width: `${pct(s.partial ?? 0, s.total)}%` }} />
                         <div className="r" style={{ width: `${pct(s.rejected, s.total)}%` }} />
                         <div className="e" style={{ width: `${pct(s.errors, s.total)}%` }} />
                       </div>
                       <div className="nums">
                         <span className="a"><b>{fa(pct(s.accepted, scored))}٪</b> قبول</span>
+                        {(s.partial ?? 0) > 0 && <span className="p"><b>{fa(pct(s.partial, scored))}٪</b> نسبی</span>}
                         <span className="r"><b>{fa(pct(s.rejected, scored))}٪</b> رد</span>
                         {s.pending > 0 && <span><b>{fa(s.pending)}</b> بررسی‌نشده</span>}
                       </div>

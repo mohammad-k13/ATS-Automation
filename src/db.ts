@@ -28,6 +28,7 @@ export interface JobStats {
   job_id: string;
   total: number;
   accepted: number;
+  partial: number;
   rejected: number;
   errors: number;
   pending: number;
@@ -180,15 +181,15 @@ export class Db {
   }
 
   listByJob(source: string, jobId: string): Row[] {
-    return this.db.prepare("SELECT * FROM applications WHERE source=? AND job_id=? ORDER BY CASE decision WHEN 'accepted' THEN 0 WHEN 'rejected' THEN 1 WHEN 'error' THEN 2 ELSE 3 END, score DESC, applied_at DESC").all(source, jobId) as unknown as Row[];
+    return this.db.prepare("SELECT * FROM applications WHERE source=? AND job_id=? ORDER BY CASE decision WHEN 'accepted' THEN 0 WHEN 'partial' THEN 1 WHEN 'rejected' THEN 2 WHEN 'error' THEN 3 ELSE 4 END, score DESC, applied_at DESC").all(source, jobId) as unknown as Row[];
   }
 
   jobStats(source: string): JobStats[] {
     return this.db
       .prepare(
         `SELECT job_id, COUNT(*) total,
-           SUM(decision='accepted') accepted, SUM(decision='rejected') rejected, SUM(decision='error') errors, SUM(decision='pending') pending,
-           ROUND(AVG(CASE WHEN decision IN ('accepted','rejected') THEN score END),1) avg_score, MAX(CASE WHEN decision!='pending' THEN processed_at END) last_processed
+           SUM(decision='accepted') accepted, SUM(decision='partial') partial, SUM(decision='rejected') rejected, SUM(decision='error') errors, SUM(decision='pending') pending,
+           ROUND(AVG(CASE WHEN decision IN ('accepted','partial','rejected') THEN score END),1) avg_score, MAX(CASE WHEN decision!='pending' THEN processed_at END) last_processed
          FROM applications WHERE source=? AND job_id IS NOT NULL GROUP BY job_id`,
       )
       .all(source) as unknown as JobStats[];

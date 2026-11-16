@@ -144,7 +144,7 @@ label.field > small { color: var(--muted); font-size: 12px; margin-top: -2px; }
 .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin-bottom: 18px; }
 .tab { padding: 10px 14px; border: 0; background: none; cursor: pointer; color: var(--muted); border-bottom: 2px solid transparent; margin-bottom: -1px; }
 .tab.on { color: var(--text); font-weight: 600; border-color: var(--accent); }
-.stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 18px; }
+.stats { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin-bottom: 18px; }
 .stat { padding: 14px 16px; }
 .stat .v { font-size: 22px; font-weight: 800; } .stat .l { color: var(--muted); font-size: 12px; }
 .toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 10px 12px; border-bottom: 1px solid var(--line); }
@@ -287,3 +287,15 @@ dialog.modal::backdrop { background: var(--backdrop); }
 @media (max-width: 760px) { .app-header { padding: 10px 16px; } .theme-btn span.l { display: none; } }
 
 .shell:not(:has(.sidebar)) { grid-template-columns: 1fr; }
+
+/* partial approval (تایید نسبی) */
+.badge.partial { background: var(--warn-soft); color: var(--warn); border-color: transparent; }
+.score.partial, .report-table td.score-cell.partial { color: var(--warn); }
+.meter .p { background: var(--warn); opacity: .85; }
+.nums .p b { color: var(--warn); }
+input[type="range"].partial-range { accent-color: var(--warn); }
+
+/* resume alerts */
+.alerts .alerts-sub { font-size: 12px; font-weight: 600; color: var(--muted); margin: 12px 0 2px; }
+.alerts h3 + .alerts-sub { margin-top: 6px; }
+.alert-count { display: inline-flex; align-items: center; gap: 2px; font-size: 12px; color: var(--warn); font-weight: 600; }

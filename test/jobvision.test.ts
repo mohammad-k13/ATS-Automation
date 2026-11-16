@@ -72,7 +72,7 @@ test("jobvision end to end against mock API: read-only, accepts, attaches PDF, d
     const src = new JobvisionSource(cfg("Bearer aaa.bbb.ccc"));
     const sent: { name: string; file?: string }[] = [];
     const notifier: Notifier = { sendAccepted: async (a, _r, f) => void sent.push({ name: a.name, file: f?.filename }), sendText: async () => {} };
-    const crit = { name: "prod", match: { jobIds: ["1"] }, threshold: 60, mustHave: ["MSP", "ERP"], niceToHave: ["Excel"], hardFilters: {} };
+    const crit = { name: "prod", match: { jobIds: ["1"] }, threshold: 60, partialThreshold: 40, mustHave: ["MSP", "ERP"], niceToHave: ["Excel"], hardFilters: {} };
     const db = new Db(":memory:");
     const opts = { sources: [src], criteria: [crit], db, scorer: new KeywordScorer(), notifier, log: () => {} };
 

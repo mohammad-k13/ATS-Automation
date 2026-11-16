@@ -34,6 +34,8 @@ export interface Criteria {
   name: string;
   match: { jobIds?: string[]; titleIncludes?: string[] };
   threshold: number;
+  /** Score from here up to `threshold` = partial approval (تایید نسبی). */
+  partialThreshold: number;
   mustHave: string[];
   niceToHave: string[];
   hardFilters: { minYears?: number; requireAny?: string[]; rejectIfAny?: string[] };
@@ -43,6 +45,8 @@ export interface Criteria {
 export interface ScoreResult {
   score: number;
   pass: boolean;
+  /** Not accepted, but good enough for partial approval. */
+  partial: boolean;
   matched: string[];
   missing: string[];
   redFlags: string[];
@@ -52,4 +56,9 @@ export interface ScoreResult {
   method: "llm" | "keyword";
 }
 
-export type Decision = "accepted" | "rejected" | "error" | "pending";
+export type Decision = "accepted" | "partial" | "rejected" | "error" | "pending";
+
+/** accepted / partial / rejected from a score result. */
+export const decisionOf = (r: { pass: boolean; partial?: boolean }): Decision => (r.pass ? "accepted" : r.partial ? "partial" : "rejected");
+/** Default partial threshold: 20 points under the accept threshold. */
+export const defaultPartial = (threshold: number) => Math.max(0, threshold - 20);

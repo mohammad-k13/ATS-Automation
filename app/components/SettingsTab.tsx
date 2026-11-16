@@ -6,13 +6,15 @@ import TagsInput from "./TagsInput";
 import { useApi } from "../lib/cache";
 
 interface Criteria {
-  threshold: number; mustHave: string[]; niceToHave: string[];
+  threshold: number; partialThreshold?: number | null; mustHave: string[]; niceToHave: string[];
   hardFilters: { minYears: number | null; requireAny: string[]; rejectIfAny: string[] };
   instructions: string;
 }
 interface Settings { criteria: Criteria | null; criteriaKind: string; criteriaName: string | null; scheduled: boolean; sourceStatus: number; unit: string; description: string; adText: string; adFetchedAt: string | null }
 
-const EMPTY: Criteria = { threshold: 70, mustHave: [], niceToHave: [], hardFilters: { minYears: null, requireAny: [], rejectIfAny: [] }, instructions: "" };
+const EMPTY: Criteria = { threshold: 70, partialThreshold: 50, mustHave: [], niceToHave: [], hardFilters: { minYears: null, requireAny: [], rejectIfAny: [] }, instructions: "" };
+
+const partialOf = (c: Criteria) => Math.min(c.partialThreshold ?? Math.max(0, c.threshold - 20), c.threshold);
 
 export default function SettingsTab({ src, jobId, jobTitle, onSaved }: { src: string; jobId: string; jobTitle: string; onSaved: () => void }) {
   const key = `platforms/${src}/jobs/${jobId}/settings`;
@@ -139,10 +141,18 @@ export default function SettingsTab({ src, jobId, jobTitle, onSaved }: { src: st
           <TagsInput value={c.niceToHave} onChange={(v) => upd({ niceToHave: v })} placeholder="مثلاً ERP" />
         </label>
         <div className="grid2">
-          <label className="field">
-            <span>حداقل امتیاز قبولی: {fa(c.threshold)}</span>
-            <input type="range" min={0} max={100} step={5} value={c.threshold} onChange={(e) => upd({ threshold: Number(e.target.value) })} />
-          </label>
+          <div className="field">
+            <span style={{ fontWeight: 600, fontSize: 13 }}>
+              قبول از <b style={{ color: "var(--ok)" }}>{fa(c.threshold)}</b> · تایید نسبی از <b style={{ color: "var(--warn)" }}>{fa(partialOf(c))}</b> · کمتر از آن رد
+            </span>
+            <label className="row small"><span style={{ width: 92 }}>حداقل قبولی</span>
+              <input type="range" className="grow" min={0} max={100} step={5} value={c.threshold}
+                onChange={(e) => { const t = Number(e.target.value); upd({ threshold: t, partialThreshold: Math.min(partialOf(c), t) }); }} /></label>
+            <label className="row small"><span style={{ width: 92 }}>حداقل تایید نسبی</span>
+              <input type="range" className="grow partial-range" min={0} max={100} step={5} value={partialOf(c)}
+                onChange={(e) => upd({ partialThreshold: Math.min(Number(e.target.value), c.threshold) })} /></label>
+            <small className="muted">امتیاز بین این دو عدد «تایید نسبی» است. برای حذف این وضعیت، هر دو را برابر بگذارید.</small>
+          </div>
           <label className="field">
             <span>حداقل سابقهٔ کار (سال)</span>
             <input className="input" type="number" min={0} value={c.hardFilters.minYears ?? ""} placeholder="بدون محدودیت"

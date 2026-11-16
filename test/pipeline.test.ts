@@ -13,6 +13,7 @@ const crit: Criteria = {
   name: "backend",
   match: { titleIncludes: ["backend", "بک اند"] },
   threshold: 70,
+  partialThreshold: 50,
   mustHave: ["Node.js", "PostgreSQL"],
   niceToHave: ["Docker"],
   hardFilters: { rejectIfAny: ["intern only"], minYears: 2 },
@@ -76,4 +77,19 @@ test("pipeline: accepts good, rejects bad, never processes twice", async () => {
   const r2 = await runOnce(opts);
   assert.deepEqual(sent, ["Good"]); // nothing re-sent
   assert.equal(r2.skipped, 2);
+});
+
+test("partial approval band: accept ≥ threshold, partial ≥ partialThreshold, else rejected; hard filters always reject", async () => {
+  const { decisionOf } = await import("../src/types");
+  const c: Criteria = { ...crit, threshold: 70, partialThreshold: 50, mustHave: ["Node.js", "PostgreSQL"], niceToHave: ["Docker", "Redis"], hardFilters: {} };
+  const s = new KeywordScorer();
+  // must 2x3 + nice 2x1 = 8 points
+  const full = await s.score({ source: "t", id: "1", name: "a" }, "Node.js PostgreSQL Docker Redis", c); // 100
+  const mid = await s.score({ source: "t", id: "2", name: "b" }, "Node.js Docker", c); // 4/8 = 50
+  const low = await s.score({ source: "t", id: "3", name: "c" }, "Docker", c); // 1/8 = 13
+  assert.equal(decisionOf(full), "accepted");
+  assert.equal(decisionOf(mid), "partial");
+  assert.equal(decisionOf(low), "rejected");
+  const blocked = await s.score({ source: "t", id: "4", name: "d" }, "Node.js PostgreSQL Docker Redis intern only", { ...c, hardFilters: { rejectIfAny: ["intern only"] } });
+  assert.equal(decisionOf(blocked), "rejected");
 });

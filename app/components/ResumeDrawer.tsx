@@ -3,7 +3,7 @@ import { useEffect, useRef } from "react";
 import { useApi } from "../lib/cache";
 import { fa, faDate, platformName } from "../lib/api";
 
-const DEC: Record<string, [string, string]> = { accepted: ["ok", "قبول"], rejected: ["rej", "رد"], error: ["warn", "خطا"], pending: ["", "بررسی‌نشده"] };
+const DEC: Record<string, [string, string]> = { accepted: ["ok", "قبول"], partial: ["partial", "تایید نسبی"], rejected: ["rej", "رد"], error: ["warn", "خطا"], pending: ["", "بررسی‌نشده"] };
 
 export default function ResumeDrawer({ src, id, onClose, onScore, onAsk }: { src: string; id: string; onClose: () => void; onScore: (id: string) => void; onAsk: (text: string, id: string) => void }) {
   const q = useApi<any>(`platforms/${src}/applications/${id}`);
@@ -30,7 +30,7 @@ export default function ResumeDrawer({ src, id, onClose, onScore, onAsk }: { src
             {a && <div className="small muted">{ex.lastJob ?? ""}</div>}
           </div>
           <div className="row">
-            {a?.score != null && <span className={`score ${a.decision === "accepted" ? "ok" : "rej"}`}>{fa(a.score)}</span>}
+            {a?.score != null && <span className={`score ${a.decision === "accepted" ? "ok" : a.decision === "partial" ? "partial" : "rej"}`}>{fa(a.score)}</span>}
             {a && <span className={`badge ${cls}`}>{label}</span>}
             <button className="btn ghost" onClick={onClose} aria-label="بستن">✕</button>
           </div>
@@ -41,7 +41,7 @@ export default function ResumeDrawer({ src, id, onClose, onScore, onAsk }: { src
             <>
               <div className="row wrap">
                 <button className="btn sm primary" onClick={() => { onScore(a.id); setTimeout(() => q.mutate(), 4000); }}>{a.decision === "pending" ? "امتیازدهی این رزومه" : "امتیازدهی مجدد"}</button>
-                <button className="btn sm" onClick={() => onAsk(`چرا ${a.name} ${a.decision === "accepted" ? "پذیرفته" : a.decision === "rejected" ? "رد" : "بررسی"} شده؟ نقاط قوت و ضعفش برای این شغل چیست؟`, a.id)}>پرسیدن از دستیار</button>
+                <button className="btn sm" onClick={() => onAsk(`چرا ${a.name} ${a.decision === "accepted" ? "پذیرفته" : a.decision === "partial" ? "تایید نسبی" : a.decision === "rejected" ? "رد" : "بررسی"} شده؟ نقاط قوت و ضعفش برای این شغل چیست؟`, a.id)}>پرسیدن از دستیار</button>
                 {a.profileUrl && <a className="btn sm" href={a.profileUrl} target="_blank" rel="noreferrer">مشاهده در {platformName(src)} ↗</a>}
               </div>
 
@@ -60,10 +60,27 @@ export default function ResumeDrawer({ src, id, onClose, onScore, onAsk }: { src
                   </div>
                 </div>
               )}
-              {r?.redFlags?.length > 0 && (
-                <div className="panel panel-pad">
+              {(ex.experienceAlerts?.length > 0 || r?.redFlags?.length > 0 || (a.decision !== "pending" && !ex.experienceAlerts)) && (
+                <div className="panel panel-pad alerts">
                   <h3 style={{ color: "var(--warn)" }}>هشدارها</h3>
-                  <ul className="pts flag">{r.redFlags.map((x: string) => <li key={x}>{x}</li>)}</ul>
+                  {ex.experienceAlerts?.length > 0 && (
+                    <>
+                      <div className="alerts-sub">سوابق کاری <span className="faint">(محاسبه از تاریخ‌ها)</span></div>
+                      <ul className="pts flag">{ex.experienceAlerts.map((x: string) => <li key={x}>{x}</li>)}</ul>
+                    </>
+                  )}
+                  {Array.isArray(ex.experienceAlerts) && ex.experienceAlerts.length === 0 && (
+                    <div className="small" style={{ color: "var(--ok)" }}>✓ سوابق کاری پیوسته است؛ فاصله، تغییر حوزه یا سابقهٔ همزمان دیده نشد.</div>
+                  )}
+                  {!ex.experienceAlerts && a.decision !== "pending" && (
+                    <div className="small faint">بررسی سوابق کاری برای این رزومه انجام نشده؛ «امتیازدهی مجدد» را بزنید.</div>
+                  )}
+                  {r?.redFlags?.length > 0 && (
+                    <>
+                      <div className="alerts-sub">از نظر هوش مصنوعی</div>
+                      <ul className="pts flag">{r.redFlags.map((x: string) => <li key={x}>{x}</li>)}</ul>
+                    </>
+                  )}
                 </div>
               )}
               {r?.hardFilterFailures?.length > 0 && <div className="notice bad">رد به دلیل شرط قطعی: {r.hardFilterFailures.join("، ")}</div>}

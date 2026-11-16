@@ -14,7 +14,7 @@ test("OpenAI-compatible (OmniRoute) scorer: sends key/model, parses JSON reply, 
   await new Promise<void>((res) => srv.listen(8833, res));
   try {
     const s = new LlmScorer(openAICompatComplete("http://127.0.0.1:8833", "k123", "my/model"));
-    const r = await s.score({ source: "t", id: "1", name: "A" }, "resume text", { name: "x", match: {}, threshold: 70, mustHave: ["Node.js"], niceToHave: [], hardFilters: { minYears: 5 } });
+    const r = await s.score({ source: "t", id: "1", name: "A" }, "resume text", { name: "x", match: {}, threshold: 70, partialThreshold: 50, mustHave: ["Node.js"], niceToHave: [], hardFilters: { minYears: 5 } });
     assert.equal(seen.url, "/v1/chat/completions");
     assert.equal(seen.auth, "Bearer k123");
     assert.equal(seen.body.model, "my/model");

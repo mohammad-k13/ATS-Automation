@@ -2,6 +2,7 @@ import { z } from "zod";
 import { httpFetch } from "../http";
 import type { Application, ResumeFile, Source } from "../types";
 import { sleep } from "../util";
+import { analyzeExperience, type WorkItem } from "../experience";
 import { AuthError } from "./http-source";
 
 /**
@@ -139,6 +140,21 @@ export function extractJobAd(html: string): string {
   const meta = html.match(/<meta[^>]+(?:name|property)=["'](?:og:)?description["'][^>]+content=["']([^"']+)/i)?.[1];
   if (meta && meta.length > 120) return stripHtml(meta);
   throw new Error("متن آگهی در صفحهٔ عمومی پیدا نشد");
+}
+
+/** Work history from GetApplicationDetails2 in a neutral shape for the experience checks. */
+export function workItems(d: any): WorkItem[] {
+  const num = (v: any) => (v == null || v === "" ? null : Number(v));
+  return (d?.cvDetail?.listOfWorkExperiences ?? []).map((w: any) => ({
+    title: t(w.roleTitle),
+    company: t(w.companyTitle),
+    category: t(w.jobCategory) || null,
+    startYear: num(w.startYear),
+    startMonth: num(w.startMonth),
+    endYear: num(w.finishYear),
+    endMonth: num(w.finishMonth),
+    current: !!w.isStillWorking,
+  }));
 }
 
 export class JobvisionSource implements Source {
@@ -279,6 +295,8 @@ export class JobvisionSource implements Source {
     // Fill the PDF link from details if the summary did not have it
     const f = d?.cvDetail?.cvFiles;
     if (!app.resumeUrl && f?.hasPersonalCv) app.resumeUrl = f.personalCvPdfUrl || (f.personalCvFileId ? `${this.cfg.fileBase}/Files/Download?FileId=${f.personalCvFileId}` : undefined);
+    // rule-based work-history checks: shown as alerts and given to the AI scorer
+    app.extra = { ...(app.extra ?? {}), experienceAlerts: analyzeExperience(workItems(d)) };
     return cvToText(d);
   }
 

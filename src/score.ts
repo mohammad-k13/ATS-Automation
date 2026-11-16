@@ -50,6 +50,7 @@ export class KeywordScorer implements Scorer {
     return {
       ...k,
       pass: hard.length === 0 && k.score >= c.threshold,
+      partial: hard.length === 0 && k.score < c.threshold && k.score >= c.partialThreshold,
       redFlags: [],
       summary: `Keyword match ${k.matched.length}/${c.mustHave.length + c.niceToHave.length}`,
       yearsExperience: null,
@@ -77,7 +78,7 @@ Reply with ONE JSON object only, no prose, matching:
 {"candidateName": string|null, "yearsExperience": number|null (total relevant professional years),
  "score": 0-100 (fit for this job), "matched": [strong points: requirements clearly evidenced],
  "missing": [weak points: must-haves or important skills NOT evidenced],
- "redFlags": [concrete concerns, e.g. unexplained gaps, job hopping, mismatch with instructions],
+ "redFlags": [concrete concerns, e.g. unexplained gaps, job hopping, career field switches, overlapping jobs, mismatch with instructions; APPLICATION DATA.experienceAlerts are computed from the real dates — weigh them, do not repeat them verbatim],
  "summary": "1-2 sentence Persian summary of the candidate and fit"}
 Scoring guide: 85+ strong, 70-84 good, 50-69 partial, <50 poor. Missing any must-have usually caps the score at 65.`;
 
@@ -129,6 +130,7 @@ export class LlmScorer implements Scorer {
       `JOB: ${app.jobTitle ?? c.name}`,
       `MUST HAVE: ${c.mustHave.join(", ") || "-"}`,
       `NICE TO HAVE: ${c.niceToHave.join(", ") || "-"}`,
+      `ACCEPT AT: ${c.threshold}+ · PARTIAL APPROVAL AT: ${c.partialThreshold}+`,
       c.hardFilters.minYears != null ? `MIN YEARS: ${c.hardFilters.minYears}` : "",
       c.instructions ? `EMPLOYER INSTRUCTIONS:\n${c.instructions}` : "",
       app.extra && Object.keys(app.extra).length ? `APPLICATION DATA: ${JSON.stringify(app.extra)}` : "",
@@ -147,6 +149,7 @@ export class LlmScorer implements Scorer {
         return {
           score: Math.round(r.score),
           pass: hard.length === 0 && r.score >= c.threshold,
+          partial: hard.length === 0 && r.score < c.threshold && r.score >= c.partialThreshold,
           matched: r.matched,
           missing: r.missing,
           redFlags: r.redFlags,
