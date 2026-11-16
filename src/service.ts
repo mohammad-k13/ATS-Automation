@@ -357,6 +357,17 @@ export interface Task {
   startedAt: string;
   finishedAt?: string;
   error?: string;
+  /** set by cancelScoring(); the run stops before the next resume */
+  cancelRequested?: boolean;
+  cancelled?: boolean;
+}
+
+/** Stop a running scoring run. The resume being scored right now finishes; the rest are skipped. */
+export function cancelScoring(src: string, jobId: string): Task {
+  const task = state().tasks.get(`${src}:${jobId}`);
+  if (!task?.running) throw new UserError("امتیازدهی در حال اجرایی برای این آگهی وجود ندارد", 409);
+  task.cancelRequested = true;
+  return task;
 }
 
 /** Number of scoring runs in progress (the auto-updater waits until it is 0). */
@@ -395,6 +406,11 @@ export async function startScoring(src: string, jobId: string, opts: { ids?: str
   (async () => {
     let relogged = false;
     for (let i = 0; i < targets.length; i++) {
+      if (task.cancelRequested) {
+        task.cancelled = true;
+        log(`متوقف شد (${task.done} از ${task.total})`);
+        break;
+      }
       const r = targets[i];
       task.current = r.name;
       const app: Application = {

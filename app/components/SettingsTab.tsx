@@ -16,7 +16,9 @@ const EMPTY: Criteria = { threshold: 70, partialThreshold: 50, mustHave: [], nic
 
 const partialOf = (c: Criteria) => Math.min(c.partialThreshold ?? Math.max(0, c.threshold - 20), c.threshold);
 
-export default function SettingsTab({ src, jobId, jobTitle, onSaved }: { src: string; jobId: string; jobTitle: string; onSaved: () => void }) {
+export default function SettingsTab({ src, jobId, jobTitle, onSaved, scoringRunning, onRestartScoring }: { src: string; jobId: string; jobTitle: string; onSaved: () => void; scoringRunning?: boolean; onRestartScoring?: () => Promise<void> }) {
+  const [restarting, setRestarting] = useState(false);
+  const [savedWhileRunning, setSavedWhileRunning] = useState(false);
   const key = `platforms/${src}/jobs/${jobId}/settings`;
   const q = useApi<Settings>(key);
   const s = q.data ?? null;
@@ -74,7 +76,10 @@ export default function SettingsTab({ src, jobId, jobTitle, onSaved }: { src: st
     try {
       const x = await api<Settings>(`platforms/${src}/jobs/${jobId}/criteria`, { method: "PUT", body: { criteria: c, jobTitle } });
       await q.mutate(x, { revalidate: false }); setDirty(false); touched.current = false;
-      setMsg({ cls: "ok", text: "ذخیره شد. برای اعمال شرایط جدید روی رزومه‌های قبلی، در تب رزومه‌ها «امتیازدهی مجدد» را بزنید." });
+      setSavedWhileRunning(!!scoringRunning);
+      setMsg({ cls: "ok", text: scoringRunning
+        ? "ذخیره شد. امتیازدهیِ در حال اجرا هنوز با شرایط قبلی ادامه دارد."
+        : "ذخیره شد. برای اعمال شرایط جدید روی رزومه‌های قبلی، در تب رزومه‌ها «امتیازدهی مجدد همه» را بزنید." });
       onSaved();
     } catch (e: any) { setMsg({ cls: "bad", text: e.message }); } finally { setBusy(""); }
   };
@@ -176,6 +181,16 @@ export default function SettingsTab({ src, jobId, jobTitle, onSaved }: { src: st
         </label>
 
         {msg && <div className={`notice ${msg.cls}`}>{msg.text}</div>}
+        {savedWhileRunning && scoringRunning && onRestartScoring && (
+          <div className="row">
+            <button className="btn primary" disabled={restarting} onClick={async () => {
+              setRestarting(true);
+              try { await onRestartScoring(); setSavedWhileRunning(false); setMsg({ cls: "ok", text: "امتیازدهی با شرایط جدید از نو شروع شد." }); }
+              catch (e: any) { setMsg({ cls: "bad", text: e.message }); }
+              finally { setRestarting(false); }
+            }}>{restarting ? "در حال توقف و شروع دوباره…" : "توقف و امتیازدهی مجدد با شرایط جدید"}</button>
+          </div>
+        )}
         <div className="row"><button className="btn primary" disabled={busy !== "" || (!dirty && !descDirty && s.criteriaKind === "job")} onClick={save}>{busy === "save" ? "در حال ذخیره…" : "ذخیره شرایط"}</button></div>
       </section>
 

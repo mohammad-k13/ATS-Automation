@@ -37,6 +37,7 @@ const routes: [string, string, H][] = [
   ["GET", "platforms/:src/jobs/:id/applications", (p) => svc.listApplications(p.src, p.id)],
   ["POST", "platforms/:src/jobs/:id/score", (p, b) => svc.startScoring(p.src, p.id, { ids: b?.ids, rescore: !!b?.rescore })],
   ["GET", "platforms/:src/jobs/:id/task", (p) => svc.getTask(p.src, p.id)],
+  ["POST", "platforms/:src/jobs/:id/score/cancel", (p) => svc.cancelScoring(p.src, p.id)],
   ["GET", "platforms/:src/jobs/:id/chat", (p) => svc.getChatHistory(p.src, p.id)],
   ["POST", "platforms/:src/jobs/:id/chat", (p, b) => svc.chatAboutJob(p.src, p.id, String(b?.message ?? ""), b?.focusIds ?? [])],
   ["DELETE", "platforms/:src/jobs/:id/chat", (p) => (svc.clearChat(p.src, p.id), [])],

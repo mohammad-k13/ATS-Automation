@@ -12,7 +12,7 @@ interface App {
   id: string; name: string; job: string | null; decision: "accepted" | "partial" | "rejected" | "error" | "pending";
   score: number | null; error: string | null; result: any; extra: any; profileUrl: string | null; appliedAt: string | null; processedAt: string | null;
 }
-interface Task { running: boolean; done: number; total: number; current: string | null; errors: number; error?: string; log: string[] }
+interface Task { running: boolean; done: number; total: number; current: string | null; errors: number; error?: string; log: string[]; cancelRequested?: boolean; cancelled?: boolean }
 
 const DEC: Record<App["decision"], [string, string]> = { accepted: ["ok", "قبول"], partial: ["partial", "تایید نسبی"], rejected: ["rej", "رد"], error: ["warn", "خطا"], pending: ["", "بررسی‌نشده"] };
 const FILTERS: [string, string][] = [["all", "همه"], ["accepted", "قبول"], ["partial", "تایید نسبی"], ["rejected", "رد"], ["pending", "بررسی‌نشده"], ["error", "خطا"]];
@@ -59,6 +59,22 @@ function JobPage() {
     if (apps && !apps.length && !triedRefresh.current) { triedRefresh.current = true; pullFromSite(); }
   }, [apps, pullFromSite]);
 
+  const cancel = async () => {
+    try { await taskQ.mutate(await api<Task>(`${base}/score/cancel`, { body: {} }), { revalidate: false }); }
+    catch (e: any) { setErr(e.message); }
+  };
+
+  /** stop the current run, wait until it has really stopped, then re-score everything with the saved settings */
+  const restartScoring = async () => {
+    await api<Task>(`${base}/score/cancel`, { body: {} }).catch(() => null);
+    for (let i = 0; i < 120; i++) {
+      const t = await api<Task | null>(`${base}/task`);
+      if (!t?.running) break;
+      await new Promise((r) => setTimeout(r, 1500));
+    }
+    await taskQ.mutate(await api<Task>(`${base}/score`, { body: { rescore: true } }), { revalidate: false });
+  };
+
   const score = async (opts: { ids?: string[]; rescore?: boolean }) => {
     setErr("");
     try { await taskQ.mutate(await api<Task>(`${base}/score`, { body: opts }), { revalidate: false }); }
@@ -97,7 +113,8 @@ function JobPage() {
           </div>
 
           {tab === "settings" ? (
-            <SettingsTab src={src} jobId={id} jobTitle={title} onSaved={() => { settingsQ.mutate(); refreshCache(`platforms/${src}/jobs`); }} />
+            <SettingsTab src={src} jobId={id} jobTitle={title} onSaved={() => { settingsQ.mutate(); refreshCache(`platforms/${src}/jobs`); }}
+              scoringRunning={running} onRestartScoring={restartScoring} />
           ) : (
             <>
               {noCriteria && (
@@ -134,13 +151,21 @@ function JobPage() {
                 {running && task && (
                   <div style={{ padding: "10px 14px", borderBottom: "1px solid var(--line)" }}>
                     <div className="row between small" style={{ marginBottom: 6 }}>
-                      <span>در حال امتیازدهی {task.current ? `«${task.current}»` : ""}</span>
-                      <span className="muted">{fa(task.done)} از {fa(task.total)}</span>
+                      <span>{task.cancelRequested ? `در حال توقف… (منتظر پایان «${task.current ?? ""}»)` : `در حال امتیازدهی ${task.current ? `«${task.current}»` : ""}`}</span>
+                      <span className="row">
+                        <span className="muted">{fa(task.done)} از {fa(task.total)}</span>
+                        <button className="btn sm danger" disabled={!!task.cancelRequested} onClick={cancel}>{task.cancelRequested ? "در حال توقف…" : "توقف"}</button>
+                      </span>
                     </div>
                     <div className="progress"><div style={{ width: `${pct(task.done, task.total)}%` }} /></div>
                   </div>
                 )}
                 {!running && task?.error && <div className="notice bad" style={{ margin: 12 }}>{task.error}</div>}
+                {!running && task?.cancelled && !task.error && (
+                  <div className="notice" style={{ margin: 12 }}>
+                    امتیازدهی متوقف شد ({fa(task.done)} از {fa(task.total)} انجام شد). بعد از تغییر تنظیمات، «امتیازدهی مجدد همه» را بزنید.
+                  </div>
+                )}
                 {err && <div className="notice bad" style={{ margin: 12 }}>{err}</div>}
 
                 <div className="toolbar" style={{ paddingBlock: 6 }}>
