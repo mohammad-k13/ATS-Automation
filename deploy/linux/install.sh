@@ -55,8 +55,13 @@ echo "node $(node -v), npm $(npm -v)"
 say "App user and folders"
 id "$APP_USER" >/dev/null 2>&1 || useradd --system --home-dir "$DATA" --create-home --shell /usr/sbin/nologin "$APP_USER"
 mkdir -p "$ROOT/releases" "$DATA/criteria"
+# the repo belongs to the app user, the installer runs as root
+rgit() { git -c safe.directory="$ROOT/repo" -C "$ROOT/repo" "$@"; }
 if [ -d "$ROOT/repo/.git" ]; then
-  git -C "$ROOT/repo" remote set-url origin "$REPO"
+  # re-run: get the latest scripts before installing them
+  rgit remote set-url origin "$REPO"
+  rgit fetch -q --depth=1 origin "$BRANCH"
+  rgit reset -q --hard FETCH_HEAD
 else
   git clone -q --depth=1 --branch "$BRANCH" "$REPO" "$ROOT/repo"
 fi
@@ -190,18 +195,19 @@ fi
 
 systemctl daemon-reload
 
-# ---------------------------------------------------------------- browser for automatic Jobvision login
-say "Browser for automatic Jobvision login"
-if ! command -v chromium >/dev/null && ! command -v chromium-browser >/dev/null && ! command -v google-chrome >/dev/null; then
-  # system libraries Chromium needs (Debian/Ubuntu); the browser itself is fetched by the first update
-  (cd "$ROOT/repo" && npx -y playwright-core@latest install-deps chromium >/dev/null 2>&1) || warn "could not install browser libraries; automatic login may not work (you can still paste a token)"
-fi
-
 # ---------------------------------------------------------------- first release
-say "Building the app (first time takes a few minutes)"
+say "Building the app (first time downloads ~300 MB of packages; slow npm = slow step)"
 systemctl enable -q ats ats-scheduler
 [ "${ATS_INSTALL_OMNIROUTE:-1}" = 1 ] && systemctl enable -q --now omniroute
 /usr/local/bin/ats update --force
+
+# ---------------------------------------------------------------- browser for automatic Jobvision login
+# uses the playwright-core that is already installed with the app (no extra download of the tool)
+say "Browser libraries for automatic Jobvision login"
+if ! command -v chromium >/dev/null && ! command -v chromium-browser >/dev/null && ! command -v google-chrome >/dev/null; then
+  (cd "$ROOT/current" && ./node_modules/.bin/playwright-core install-deps chromium >/dev/null 2>&1) ||
+    warn "could not install browser libraries (apt failed?) — automatic login may not work; you can still paste a token"
+fi
 
 # ---------------------------------------------------------------- dashboard login
 if ! grep -q '^ATS_PASSWORD_HASH=' "$DATA/.env"; then

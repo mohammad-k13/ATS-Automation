@@ -27,6 +27,8 @@ app_env() {
   echo "HOME=$DATA DB_PATH=$DATA/ats.db SOURCES_FILE=$DATA/sources.yaml CRITERIA_DIR=$DATA/criteria NEXT_TELEMETRY_DISABLED=1" \
     ${ATS_NPM_REGISTRY:+npm_config_registry=$ATS_NPM_REGISTRY}
 }
+# the repo belongs to the app user while updates run as root: tell git that is fine
+repo_git() { git -c safe.directory="$ROOT/repo" -C "$ROOT/repo" "$@"; }
 current_rev() { [ -L "$ROOT/current" ] && basename "$(readlink -f "$ROOT/current")" || true; }
 health() { curl -fsS --max-time 5 "http://127.0.0.1:$PORT/api/health" 2>/dev/null || true; }
 need_root() { [ "$(id -u)" = 0 ] || die "run as root: sudo ats $*"; }
@@ -39,9 +41,9 @@ cmd_update() {
   exec 9>"${ATS_LOCK:-/run/ats-update.lock}"
   flock -n 9 || { log "another update is running"; return 0; }
 
-  git -C "$ROOT/repo" fetch -q --depth=1 origin "$BRANCH" || die "cannot reach GitHub (git fetch failed)"
+  repo_git fetch -q --depth=1 origin "$BRANCH" || die "git fetch failed (see the error above)"
   local new cur
-  new=$(git -C "$ROOT/repo" rev-parse FETCH_HEAD)
+  new=$(repo_git rev-parse FETCH_HEAD)
   cur=$(current_rev)
   if [ "$new" = "$cur" ] && [ $force = 0 ]; then log "up to date (${cur:0:7})"; return 0; fi
 
@@ -55,7 +57,7 @@ cmd_update() {
   local rel="$ROOT/releases/$new"
   [ -n "$new" ] && [ -d "$rel" ] && rm -rf -- "$rel"
   mkdir -p "$rel"
-  git -C "$ROOT/repo" archive FETCH_HEAD | tar -x -C "$rel"
+  repo_git archive FETCH_HEAD | tar -x -C "$rel"
   echo "$new" >"$rel/VERSION"
   ln -sfn "$DATA/.env" "$rel/.env"
   ln -sfn "$DATA/sources.yaml" "$rel/sources.yaml"
