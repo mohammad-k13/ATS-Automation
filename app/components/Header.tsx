@@ -28,6 +28,8 @@ function useCrumbs(): { crumbs: Crumb[]; parent: string | null } {
     c.push({ label: "گزارش" });
     return { crumbs: c, parent: jobId && src ? `/p/${src}/jobs/${jobId}` : src ? `/p/${src}` : "/" };
   }
+  if (src && params.id && path.endsWith("/chat"))
+    return { crumbs: [{ label: `آگهی‌های ${platformName(src)}`, href: `/p/${src}` }, { label: jobTitle, href: `/p/${src}/jobs/${params.id}` }, { label: "گفتگوها" }], parent: `/p/${src}/jobs/${params.id}` };
   if (src && params.id) return { crumbs: [{ label: `آگهی‌های ${platformName(src)}`, href: `/p/${src}` }, { label: jobTitle }], parent: `/p/${src}` };
   if (src) return { crumbs: [{ label: `آگهی‌های ${platformName(src)}` }], parent: null };
   return { crumbs: [{ label: "داشبورد" }], parent: null };

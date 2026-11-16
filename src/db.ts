@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { randomUUID } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import type { Decision } from "./types";
 
@@ -22,6 +23,16 @@ export interface Row {
   attempts: number;
   notified: number;
   processed_at: string;
+}
+
+export interface ThreadRow {
+  id: string;
+  source: string;
+  job_id: string;
+  title: string;
+  messages_json: string;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface JobStats {
@@ -64,6 +75,10 @@ export class Db {
     const metaCols = new Set((this.db.prepare("PRAGMA table_info(jobs_meta)").all() as any[]).map((c) => c.name));
     for (const col of ["title", "description", "ad_text", "ad_fetched_at"]) if (!metaCols.has(col)) this.db.exec(`ALTER TABLE jobs_meta ADD COLUMN ${col} TEXT`);
     this.db.exec(`CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, json TEXT NOT NULL, updated_at TEXT NOT NULL)`);
+    this.db.exec(`CREATE TABLE IF NOT EXISTS chat_threads (
+      id TEXT PRIMARY KEY, source TEXT NOT NULL, job_id TEXT NOT NULL, title TEXT NOT NULL,
+      messages_json TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)`);
+    this.db.exec(`CREATE INDEX IF NOT EXISTS chat_threads_job ON chat_threads (source, job_id, updated_at)`);
     this.db.exec(`CREATE TABLE IF NOT EXISTS chats (
       source TEXT NOT NULL, job_id TEXT NOT NULL, messages_json TEXT NOT NULL, updated_at TEXT NOT NULL,
       PRIMARY KEY (source, job_id))`);
@@ -119,6 +134,35 @@ export class Db {
       .prepare(`SELECT a.*, m.unit FROM applications a LEFT JOIN jobs_meta m ON m.source=a.source AND m.job_id=a.job_id
                 WHERE ${where.join(" AND ")} ORDER BY a.job, a.score DESC, a.applied_at DESC`)
       .all(...args) as unknown as (Row & { unit: string | null })[];
+  }
+
+  // ---- chat threads (several conversations per job)
+  listThreads(source: string, jobId: string): ThreadRow[] {
+    this.migrateLegacyChat(source, jobId);
+    return this.db.prepare("SELECT * FROM chat_threads WHERE source=? AND job_id=? ORDER BY updated_at DESC").all(source, jobId) as unknown as ThreadRow[];
+  }
+  getThread(id: string): ThreadRow | undefined {
+    return this.db.prepare("SELECT * FROM chat_threads WHERE id=?").get(id) as ThreadRow | undefined;
+  }
+  createThread(source: string, jobId: string, title: string, messages: unknown[] = []): ThreadRow {
+    const id = randomUUID();
+    const now = new Date().toISOString();
+    this.db.prepare("INSERT INTO chat_threads (id,source,job_id,title,messages_json,created_at,updated_at) VALUES (?,?,?,?,?,?,?)").run(id, source, jobId, title, JSON.stringify(messages), now, now);
+    return this.getThread(id)!;
+  }
+  saveThread(id: string, fields: { title?: string; messages?: unknown[] }) {
+    if (fields.title !== undefined) this.db.prepare("UPDATE chat_threads SET title=? WHERE id=?").run(fields.title, id);
+    if (fields.messages !== undefined) this.db.prepare("UPDATE chat_threads SET messages_json=?, updated_at=? WHERE id=?").run(JSON.stringify(fields.messages), new Date().toISOString(), id);
+  }
+  deleteThread(id: string) {
+    this.db.prepare("DELETE FROM chat_threads WHERE id=?").run(id);
+  }
+  /** the old single chat per job becomes the first thread */
+  private migrateLegacyChat(source: string, jobId: string) {
+    const old = this.getChat(source, jobId);
+    if (!old.length) return;
+    this.createThread(source, jobId, "گفتگوی قبلی", old);
+    this.db.prepare("DELETE FROM chats WHERE source=? AND job_id=?").run(source, jobId);
   }
 
   getChat(source: string, jobId: string): { role: "user" | "assistant"; content: string }[] {

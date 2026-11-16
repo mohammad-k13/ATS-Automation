@@ -1,6 +1,7 @@
 "use client";
 import { useSearchParams } from "next/navigation";
 import { Suspense } from "react";
+import { downloadXlsx } from "@/src/xlsx";
 import { useApi } from "../lib/cache";
 
 interface Row { name: string; source: string; phone: string; receivedAt: string | null; unit: string; jobTitle: string; resumeType: string; status: string; score: number | null }
@@ -36,13 +37,8 @@ function ReportView() {
 
   const csv = () => {
     if (!rep) return;
-    const esc = (v: string) => `"${v.replace(/"/g, '""')}"`;
-    const lines = [["ردیف", ...COLS.map(([, l]) => l)].map(esc).join(","), ...rep.rows.map((r, i) => [String(i + 1), ...COLS.map(([k]) => (k === "receivedAt" ? faDay(r.receivedAt) : k === "score" ? (r.score != null ? String(r.score) : "") : String(r[k] ?? "")))].map(esc).join(","))];
-    const blob = new Blob(["﻿" + lines.join("\r\n")], { type: "text/csv;charset=utf-8" });
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = `گزارش-رزومه-${new Date().toISOString().slice(0, 10)}.csv`;
-    a.click();
+    const rows = rep.rows.map((r, i) => [i + 1, ...COLS.map(([k]) => (k === "receivedAt" ? faDay(r.receivedAt) : k === "score" ? r.score ?? "" : String(r[k] ?? "")))]);
+    downloadXlsx(`گزارش رزومه ${new Date().toISOString().slice(0, 10)}`, ["ردیف", ...COLS.map(([, l]) => l)], rows);
   };
 
   if (err) return <div className="notice bad">{err}</div>;
