@@ -212,7 +212,9 @@ export class JobvisionSource implements Source {
       appliedAt: s.applicationTime,
       profileUrl: `${this.cfg.panelBase}/jobs/${jobPostId}/applications/${s.applicationId}/jobvision-profile`,
       resumeUrl: files.hasPersonalCv && files.personalCvPdfUrl ? files.personalCvPdfUrl : undefined,
+      phone: cv.contactData?.mobileNumber || cv.contactData?.phoneNumber || undefined,
       extra: {
+        resumeType: files.hasPersonalCv ? "فایل رزومهٔ شخصی" : "پروفایل جاب‌ویژن",
         jobvisionMatchScore: s.matchingScore ?? null,
         totalWorkExperienceYears: cv.totalWorkExperience ?? null,
         city: t(b.residenceCity) || null,

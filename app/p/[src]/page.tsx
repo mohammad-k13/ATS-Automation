@@ -55,6 +55,7 @@ export default function JobsPage() {
         </div>
         <div className="row">
           {jobs && jobs.length > 3 && <input className="input" style={{ width: 200 }} placeholder="جستجوی آگهی…" value={q} onChange={(e) => setQ(e.target.value)} />}
+          <Link className="btn" href={`/report?src=${src}&status=accepted`}>گزارش قبولی‌ها</Link>
           <button className="btn" onClick={load}>↻ به‌روزرسانی</button>
         </div>
       </div>

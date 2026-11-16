@@ -135,6 +135,9 @@ function JobPage() {
                   </button>
                   <button className="btn sm" disabled={running || !scored} onClick={() => confirm("همهٔ رزومه‌ها دوباره امتیاز بگیرند؟") && score({ rescore: true })}>امتیازدهی مجدد همه</button>
                   <span className="grow" />
+                  <Link className="btn sm" href={`/report?${new URLSearchParams({ src, job: id, ...(selIds.length ? { ids: selIds.join(",") } : filter !== "all" ? { status: filter } : {}) })}`}>
+                    گزارش {selIds.length ? `انتخاب‌شده‌ها (${fa(selIds.length)})` : filter !== "all" ? `«${FILTERS.find(([f]) => f === filter)?.[1]}»` : ""}
+                  </Link>
                   <button className="btn sm ghost" disabled={busy === "refresh" || running} onClick={refresh}>{busy === "refresh" ? "در حال دریافت…" : "↻ دریافت از سایت"}</button>
                 </div>
 

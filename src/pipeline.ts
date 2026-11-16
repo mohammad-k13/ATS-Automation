@@ -100,7 +100,7 @@ export async function runOnce(o: RunOptions): Promise<RunSummary> {
 function rowFields(app: Application, resumeText?: string) {
   return {
     source: app.source, id: app.id, name: app.name, job: app.jobTitle, jobId: app.jobId, resumeText,
-    extra: app.extra, profileUrl: app.profileUrl, resumeUrl: app.resumeUrl, appliedAt: app.appliedAt,
+    extra: app.extra, profileUrl: app.profileUrl, resumeUrl: app.resumeUrl, appliedAt: app.appliedAt, phone: app.phone,
   };
 }
 

@@ -5,7 +5,7 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 type Ctx = { params: Promise<{ path: string[] }> };
-type H = (p: Record<string, string>, body: any) => unknown;
+type H = (p: Record<string, string>, body: any, query: URLSearchParams) => unknown;
 
 // [method, pattern, handler]  — :name captures a segment
 const routes: [string, string, H][] = [
@@ -28,6 +28,14 @@ const routes: [string, string, H][] = [
   ["POST", "platforms/:src/jobs/:id/chat", (p, b) => svc.chatAboutJob(p.src, p.id, String(b?.message ?? ""), b?.focusIds ?? [])],
   ["DELETE", "platforms/:src/jobs/:id/chat", (p) => (svc.clearChat(p.src, p.id), [])],
   ["GET", "platforms/:src/applications/:id", (p) => svc.getApplication(p.src, p.id)],
+  ["PUT", "platforms/:src/jobs/:id/unit", (p, b) => svc.setJobUnit(p.src, p.id, String(b?.unit ?? ""))],
+  ["GET", "platforms/:src/report", (p, _b, q) => svc.report(p.src, { jobId: q.get("job") ?? undefined, status: q.get("status") ?? undefined, ids: q.get("ids") ?? undefined })],
+  ["GET", "integrations", () => svc.getIntegrations()],
+  ["PUT", "integrations/ai", (_, b) => svc.saveAiSettings(b ?? {})],
+  ["POST", "integrations/ai/models", (_, b) => svc.listAiModels(b ?? {})],
+  ["POST", "integrations/ai/test", () => svc.testAi()],
+  ["PUT", "integrations/telegram", (_, b) => svc.saveTelegramSettings(b ?? {})],
+  ["POST", "integrations/telegram/test", () => svc.testTelegram()],
 ];
 
 function match(pattern: string, parts: string[]) {
@@ -47,7 +55,7 @@ async function handle(req: Request, ctx: Ctx) {
     const body = req.method === "GET" || req.method === "DELETE" ? null : await req.json().catch(() => ({}));
     for (const [m, pat, h] of routes) {
       const p = m === req.method ? match(pat, path) : null;
-      if (p) return Response.json((await h(p, body)) ?? null);
+      if (p) return Response.json((await h(p, body, new URL(req.url).searchParams)) ?? null);
     }
     return Response.json({ error: "not found" }, { status: 404 });
   } catch (e) {

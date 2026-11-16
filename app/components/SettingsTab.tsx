@@ -9,7 +9,7 @@ interface Criteria {
   hardFilters: { minYears: number | null; requireAny: string[]; rejectIfAny: string[] };
   instructions: string;
 }
-interface Settings { criteria: Criteria | null; criteriaKind: string; criteriaName: string | null; scheduled: boolean; sourceStatus: number }
+interface Settings { criteria: Criteria | null; criteriaKind: string; criteriaName: string | null; scheduled: boolean; sourceStatus: number; unit: string }
 
 const EMPTY: Criteria = { threshold: 70, mustHave: [], niceToHave: [], hardFilters: { minYears: null, requireAny: [], rejectIfAny: [] }, instructions: "" };
 
@@ -49,6 +49,12 @@ export default function SettingsTab({ src, jobId, jobTitle, onSaved }: { src: st
       setMsg({ cls: "ok", text: "ذخیره شد. برای اعمال شرایط جدید روی رزومه‌های قبلی، در تب رزومه‌ها «امتیازدهی مجدد» را بزنید." });
       onSaved();
     } catch (e: any) { setMsg({ cls: "bad", text: e.message }); } finally { setBusy(""); }
+  };
+
+  const [unit, setUnit] = useState<string | null>(null);
+  const saveUnit = async () => {
+    try { await api(`platforms/${src}/jobs/${jobId}/unit`, { method: "PUT", body: { unit } }); setS((o) => (o ? { ...o, unit: unit ?? "" } : o)); setUnit(null); }
+    catch (e: any) { setMsg({ cls: "bad", text: e.message }); }
   };
 
   const toggleScheduled = async (on: boolean) => {
@@ -118,6 +124,18 @@ export default function SettingsTab({ src, jobId, jobTitle, onSaved }: { src: st
 
         {msg && <div className={`notice ${msg.cls}`}>{msg.text}</div>}
         <div className="row"><button className="btn primary" disabled={busy !== "" || (!dirty && s.criteriaKind === "job")} onClick={save}>{busy === "save" ? "در حال ذخیره…" : "ذخیره شرایط"}</button></div>
+      </section>
+
+      <section className="panel panel-pad stack">
+        <h2>اطلاعات آگهی</h2>
+        <label className="field">
+          <span>نام واحد</span>
+          <small>در گزارش‌ها نمایش داده می‌شود (مثلاً تولید، مالی، فروش)</small>
+          <div className="row">
+            <input className="input" value={unit ?? s.unit} onChange={(e) => setUnit(e.target.value)} placeholder="مثلاً واحد تولید" />
+            <button className="btn" disabled={unit === null || unit === s.unit} onClick={saveUnit}>ذخیره</button>
+          </div>
+        </label>
       </section>
 
       <section className="panel panel-pad stack">

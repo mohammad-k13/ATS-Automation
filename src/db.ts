@@ -18,6 +18,7 @@ export interface Row {
   profile_url: string | null;
   resume_url: string | null;
   applied_at: string | null;
+  phone: string | null;
   attempts: number;
   notified: number;
   processed_at: string;
@@ -41,6 +42,7 @@ const EXTRA_COLUMNS: Record<string, string> = {
   profile_url: "TEXT",
   resume_url: "TEXT",
   applied_at: "TEXT",
+  phone: "TEXT",
 };
 
 export class Db {
@@ -56,22 +58,45 @@ export class Db {
     // migrate older databases
     const have = new Set((this.db.prepare("PRAGMA table_info(applications)").all() as any[]).map((c) => c.name));
     for (const [col, type] of Object.entries(EXTRA_COLUMNS)) if (!have.has(col)) this.db.exec(`ALTER TABLE applications ADD COLUMN ${col} ${type}`);
+    this.db.exec(`CREATE TABLE IF NOT EXISTS jobs_meta (
+      source TEXT NOT NULL, job_id TEXT NOT NULL, unit TEXT, PRIMARY KEY (source, job_id))`);
     this.db.exec(`CREATE TABLE IF NOT EXISTS chats (
       source TEXT NOT NULL, job_id TEXT NOT NULL, messages_json TEXT NOT NULL, updated_at TEXT NOT NULL,
       PRIMARY KEY (source, job_id))`);
   }
 
   /** Store an applicant seen in the job list without scoring it. Never overwrites a scored row. */
-  upsertListed(a: { source: string; id: string; name: string; job?: string; jobId?: string; extra?: unknown; profileUrl?: string; resumeUrl?: string; appliedAt?: string }) {
+  upsertListed(a: { source: string; id: string; name: string; job?: string; jobId?: string; extra?: unknown; profileUrl?: string; resumeUrl?: string; appliedAt?: string; phone?: string }) {
     this.db
       .prepare(
-        `INSERT INTO applications (source,id,name,job,job_id,decision,attempts,processed_at,extra_json,profile_url,resume_url,applied_at)
-         VALUES (?,?,?,?,?,'pending',0,?,?,?,?,?)
+        `INSERT INTO applications (source,id,name,job,job_id,decision,attempts,processed_at,extra_json,profile_url,resume_url,applied_at,phone)
+         VALUES (?,?,?,?,?,'pending',0,?,?,?,?,?,?)
          ON CONFLICT(source,id) DO UPDATE SET name=excluded.name, job=excluded.job, job_id=excluded.job_id,
            extra_json=excluded.extra_json, profile_url=excluded.profile_url, resume_url=COALESCE(excluded.resume_url, resume_url),
-           applied_at=excluded.applied_at`,
+           applied_at=excluded.applied_at, phone=COALESCE(excluded.phone, phone)`,
       )
-      .run(a.source, a.id, a.name, a.job ?? null, a.jobId ?? null, new Date().toISOString(), a.extra ? JSON.stringify(a.extra) : null, a.profileUrl ?? null, a.resumeUrl ?? null, a.appliedAt ?? null);
+      .run(a.source, a.id, a.name, a.job ?? null, a.jobId ?? null, new Date().toISOString(), a.extra ? JSON.stringify(a.extra) : null, a.profileUrl ?? null, a.resumeUrl ?? null, a.appliedAt ?? null, a.phone ?? null);
+  }
+
+  getUnit(source: string, jobId: string): string {
+    const r = this.db.prepare("SELECT unit FROM jobs_meta WHERE source=? AND job_id=?").get(source, jobId) as { unit: string | null } | undefined;
+    return r?.unit ?? "";
+  }
+  setUnit(source: string, jobId: string, unit: string) {
+    this.db.prepare("INSERT INTO jobs_meta (source,job_id,unit) VALUES (?,?,?) ON CONFLICT(source,job_id) DO UPDATE SET unit=excluded.unit").run(source, jobId, unit);
+  }
+
+  /** Rows for reports: optionally one job, decisions and/or ids. */
+  report(source: string, f: { jobId?: string; decisions?: string[]; ids?: string[] }): (Row & { unit: string | null })[] {
+    const where = ["a.source=?"];
+    const args: string[] = [source];
+    if (f.jobId) { where.push("a.job_id=?"); args.push(f.jobId); }
+    if (f.decisions?.length) { where.push(`a.decision IN (${f.decisions.map(() => "?").join(",")})`); args.push(...f.decisions); }
+    if (f.ids?.length) { where.push(`a.id IN (${f.ids.map(() => "?").join(",")})`); args.push(...f.ids); }
+    return this.db
+      .prepare(`SELECT a.*, m.unit FROM applications a LEFT JOIN jobs_meta m ON m.source=a.source AND m.job_id=a.job_id
+                WHERE ${where.join(" AND ")} ORDER BY a.job, a.score DESC, a.applied_at DESC`)
+      .all(...args) as unknown as (Row & { unit: string | null })[];
   }
 
   getChat(source: string, jobId: string): { role: "user" | "assistant"; content: string }[] {
@@ -100,23 +125,23 @@ export class Db {
 
   save(r: {
     source: string; id: string; name: string; job?: string; jobId?: string; decision: Decision; score?: number; error?: string;
-    result?: unknown; notified?: boolean; resumeText?: string; extra?: unknown; profileUrl?: string; resumeUrl?: string; appliedAt?: string;
+    result?: unknown; notified?: boolean; resumeText?: string; extra?: unknown; profileUrl?: string; resumeUrl?: string; appliedAt?: string; phone?: string;
   }) {
     this.db
       .prepare(
-        `INSERT INTO applications (source,id,name,job,job_id,decision,score,error,result_json,notified,processed_at,resume_text,extra_json,profile_url,resume_url,applied_at)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        `INSERT INTO applications (source,id,name,job,job_id,decision,score,error,result_json,notified,processed_at,resume_text,extra_json,profile_url,resume_url,applied_at,phone)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
          ON CONFLICT(source,id) DO UPDATE SET name=excluded.name, job=excluded.job, job_id=COALESCE(excluded.job_id, job_id),
            decision=excluded.decision, score=excluded.score, error=excluded.error, result_json=excluded.result_json,
            notified=excluded.notified, processed_at=excluded.processed_at, attempts=attempts+1,
            resume_text=COALESCE(excluded.resume_text, resume_text), extra_json=COALESCE(excluded.extra_json, extra_json),
            profile_url=COALESCE(excluded.profile_url, profile_url), resume_url=COALESCE(excluded.resume_url, resume_url),
-           applied_at=COALESCE(excluded.applied_at, applied_at)`,
+           applied_at=COALESCE(excluded.applied_at, applied_at), phone=COALESCE(excluded.phone, phone)`,
       )
       .run(
         r.source, r.id, r.name, r.job ?? null, r.jobId ?? null, r.decision, r.score ?? null, r.error ?? null,
         r.result ? JSON.stringify(r.result) : null, r.notified ? 1 : 0, new Date().toISOString(),
-        r.resumeText ?? null, r.extra ? JSON.stringify(r.extra) : null, r.profileUrl ?? null, r.resumeUrl ?? null, r.appliedAt ?? null,
+        r.resumeText ?? null, r.extra ? JSON.stringify(r.extra) : null, r.profileUrl ?? null, r.resumeUrl ?? null, r.appliedAt ?? null, r.phone ?? null,
       );
   }
 

@@ -2,6 +2,7 @@
 import { useEffect, useState } from "react";
 import { tokenState } from "../components/Sidebar";
 import AutoLogin from "../components/AutoLogin";
+import Integrations from "../components/Integrations";
 import { api, platformName, type Status } from "../lib/api";
 
 export default function SettingsPage() {
@@ -33,7 +34,7 @@ export default function SettingsPage() {
   return (
     <>
       <div className="page-head">
-        <div><h1>منابع و توکن‌ها</h1><p>اتصال به پلتفرم‌ها و تنظیمات کلی دریافت رزومه</p></div>
+        <div><h1>تنظیمات</h1><p>اتصال به پلتفرم‌ها، هوش مصنوعی، تلگرام و منابع رزومه</p></div>
       </div>
       <div className="stack" style={{ gap: 18 }}>
         <section className="panel panel-pad stack">
@@ -51,21 +52,9 @@ export default function SettingsPage() {
               </div>
             );
           })}
-          <div className="row between">
-            <div>
-              <h3>هوش مصنوعی</h3>
-              <div className="small muted">{st?.ai.provider === "keyword" ? "تنظیم نشده — فقط امتیازدهی کلمه‌کلیدی" : <span className="ltr">{st?.ai.provider} · {st?.ai.model}</span>}</div>
-            </div>
-            <span className="small faint">در فایل <span className="ltr">.env</span></span>
-          </div>
-          <div className="row between">
-            <div>
-              <h3>تلگرام</h3>
-              <div className="small muted">{st?.telegram ? "متصل" : "تنظیم نشده"}</div>
-            </div>
-            <span className="small faint">در فایل <span className="ltr">.env</span></span>
-          </div>
         </section>
+
+        <Integrations onChange={loadStatus} />
 
         <section className="panel panel-pad stack">
           <div className="section-title">

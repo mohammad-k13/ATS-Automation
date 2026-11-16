@@ -42,7 +42,7 @@ export default function Sidebar() {
       {st && !st.platforms.length && <div className="small faint" style={{ padding: "0 10px" }}>پلتفرمی فعال نیست</div>}
       <div className="nav-title">تنظیمات</div>
       <Link href="/settings" className={`nav-item ${path.startsWith("/settings") ? "active" : ""}`}>
-        <span>منابع و توکن‌ها</span>
+        <span>تنظیمات و اتصال‌ها</span>
       </Link>
       <div className="bottom small faint" style={{ padding: "0 10px" }}>
         {st && (st.ai.provider === "keyword" ? <span className="badge warn">هوش مصنوعی خاموش</span> : <span className="ltr">AI · {st.ai.model}</span>)}

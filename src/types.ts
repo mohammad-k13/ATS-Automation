@@ -9,6 +9,8 @@ export interface Application {
   resumeUrl?: string;
   /** Resume text if the API returns it inline (skips download/parse). */
   resumeText?: string;
+  /** Contact phone. Private: stored for reports, never sent to the AI. */
+  phone?: string;
   /** Any extra fields from the API, passed to the scorer as context. */
   extra?: Record<string, unknown>;
   raw?: unknown;
