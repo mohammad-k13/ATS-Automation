@@ -62,6 +62,7 @@ export class Db {
       source TEXT NOT NULL, job_id TEXT NOT NULL, unit TEXT, PRIMARY KEY (source, job_id))`);
     const metaCols = new Set((this.db.prepare("PRAGMA table_info(jobs_meta)").all() as any[]).map((c) => c.name));
     for (const col of ["title", "description", "ad_text", "ad_fetched_at"]) if (!metaCols.has(col)) this.db.exec(`ALTER TABLE jobs_meta ADD COLUMN ${col} TEXT`);
+    this.db.exec(`CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, json TEXT NOT NULL, updated_at TEXT NOT NULL)`);
     this.db.exec(`CREATE TABLE IF NOT EXISTS chats (
       source TEXT NOT NULL, job_id TEXT NOT NULL, messages_json TEXT NOT NULL, updated_at TEXT NOT NULL,
       PRIMARY KEY (source, job_id))`);
@@ -78,6 +79,14 @@ export class Db {
            applied_at=excluded.applied_at, phone=COALESCE(excluded.phone, phone)`,
       )
       .run(a.source, a.id, a.name, a.job ?? null, a.jobId ?? null, new Date().toISOString(), a.extra ? JSON.stringify(a.extra) : null, a.profileUrl ?? null, a.resumeUrl ?? null, a.appliedAt ?? null, a.phone ?? null);
+  }
+
+  getKv<T>(key: string): { value: T; updatedAt: string } | null {
+    const r = this.db.prepare("SELECT json, updated_at FROM kv WHERE key=?").get(key) as { json: string; updated_at: string } | undefined;
+    return r ? { value: JSON.parse(r.json) as T, updatedAt: r.updated_at } : null;
+  }
+  setKv(key: string, value: unknown) {
+    this.db.prepare("INSERT INTO kv (key,json,updated_at) VALUES (?,?,?) ON CONFLICT(key) DO UPDATE SET json=excluded.json, updated_at=excluded.updated_at").run(key, JSON.stringify(value), new Date().toISOString());
   }
 
   getJobMeta(source: string, jobId: string): { unit: string; title: string; description: string; adText: string; adFetchedAt: string | null } {

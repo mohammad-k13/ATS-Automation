@@ -1,8 +1,9 @@
 "use client";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api, fa, platformName } from "../lib/api";
 import TagsInput from "./TagsInput";
+import { useApi } from "../lib/cache";
 
 interface Criteria {
   threshold: number; mustHave: string[]; niceToHave: string[];
@@ -14,23 +15,27 @@ interface Settings { criteria: Criteria | null; criteriaKind: string; criteriaNa
 const EMPTY: Criteria = { threshold: 70, mustHave: [], niceToHave: [], hardFilters: { minYears: null, requireAny: [], rejectIfAny: [] }, instructions: "" };
 
 export default function SettingsTab({ src, jobId, jobTitle, onSaved }: { src: string; jobId: string; jobTitle: string; onSaved: () => void }) {
-  const [s, setS] = useState<Settings | null>(null);
+  const key = `platforms/${src}/jobs/${jobId}/settings`;
+  const q = useApi<Settings>(key);
+  const s = q.data ?? null;
+  const setS = (fn: (o: Settings | null) => Settings | null) => q.mutate((o) => fn(o ?? null) ?? undefined, { revalidate: false });
   const [c, setC] = useState<Criteria>(EMPTY);
   const [desc, setDesc] = useState("");
   const [busy, setBusy] = useState<"" | "draft" | "save">("");
   const [msg, setMsg] = useState<{ cls: string; text: string } | null>(null);
   const [dirty, setDirty] = useState(false);
 
+  // fill the form from the (cached, then fresh) settings as long as the user has not started editing
+  const touched = useRef(false);
   useEffect(() => {
-    api<Settings>(`platforms/${src}/jobs/${jobId}/settings`).then((x) => {
-      setS(x);
-      setC(x.criteria ?? EMPTY);
-      setDesc(x.description ?? "");
-    }).catch((e) => setMsg({ cls: "bad", text: e.message }));
-  }, [src, jobId]);
+    if (!q.data || touched.current) return;
+    setC(q.data.criteria ?? EMPTY);
+    setDesc(q.data.description ?? "");
+  }, [q.data]);
+  useEffect(() => { if (q.error) setMsg({ cls: "bad", text: q.error.message }); }, [q.error]);
 
-  const upd = (patch: Partial<Criteria>) => { setC((o) => ({ ...o, ...patch })); setDirty(true); };
-  const updHF = (patch: Partial<Criteria["hardFilters"]>) => { setC((o) => ({ ...o, hardFilters: { ...o.hardFilters, ...patch } })); setDirty(true); };
+  const upd = (patch: Partial<Criteria>) => { touched.current = true; setC((o) => ({ ...o, ...patch })); setDirty(true); };
+  const updHF = (patch: Partial<Criteria["hardFilters"]>) => { touched.current = true; setC((o) => ({ ...o, hardFilters: { ...o.hardFilters, ...patch } })); setDirty(true); };
 
   const draft = async () => {
     setBusy("draft"); setMsg(null);
@@ -66,7 +71,7 @@ export default function SettingsTab({ src, jobId, jobTitle, onSaved }: { src: st
     setBusy("save"); setMsg(null);
     try {
       const x = await api<Settings>(`platforms/${src}/jobs/${jobId}/criteria`, { method: "PUT", body: { criteria: c, jobTitle } });
-      setS(x); setDirty(false);
+      await q.mutate(x, { revalidate: false }); setDirty(false); touched.current = false;
       setMsg({ cls: "ok", text: "ذخیره شد. برای اعمال شرایط جدید روی رزومه‌های قبلی، در تب رزومه‌ها «امتیازدهی مجدد» را بزنید." });
       onSaved();
     } catch (e: any) { setMsg({ cls: "bad", text: e.message }); } finally { setBusy(""); }
@@ -79,7 +84,7 @@ export default function SettingsTab({ src, jobId, jobTitle, onSaved }: { src: st
   };
 
   const toggleScheduled = async (on: boolean) => {
-    try { setS(await api<Settings>(`platforms/${src}/jobs/${jobId}/scheduled`, { method: "PUT", body: { on } })); }
+    try { await q.mutate(await api<Settings>(`platforms/${src}/jobs/${jobId}/scheduled`, { method: "PUT", body: { on } }), { revalidate: false }); }
     catch (e: any) { setMsg({ cls: "bad", text: e.message }); }
   };
 
@@ -112,7 +117,7 @@ export default function SettingsTab({ src, jobId, jobTitle, onSaved }: { src: st
         <label className="field">
           <span>توضیحات شما دربارهٔ این شغل</span>
           <small>هر چیزی که در آگهی نیست یا برایتان مهم‌تر است را بنویسید. این متن ذخیره می‌شود و هوش مصنوعی در امتیازدهی و گفتگو از آن استفاده می‌کند؛ لازم نیست دوباره توضیح دهید.</small>
-          <textarea className="textarea" rows={4} value={desc} onChange={(e) => setDesc(e.target.value)}
+          <textarea className="textarea" rows={4} value={desc} onChange={(e) => { touched.current = true; setDesc(e.target.value); }}
             placeholder="مثلاً: کسی را می‌خواهیم که خودش مدیریت خط تولید را انجام داده باشد، نه فقط کار دفتری. ساکن اصفهان یا نجف‌آباد باشد بهتر است…" />
         </label>
         <div className="row wrap">

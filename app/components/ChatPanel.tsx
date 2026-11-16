@@ -1,19 +1,21 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { api, fa } from "../lib/api";
+import { useApi } from "../lib/cache";
 
 type Msg = { role: "user" | "assistant"; content: string };
 
 const SUGGEST = ["سه نفر برتر را مقایسه کن", "چرا بیشتر رزومه‌ها رد شدند؟", "چه کسی را برای مصاحبه پیشنهاد می‌کنی؟", "آیا شرایط آگهی بیش از حد سخت‌گیرانه است؟"];
 
 export default function ChatPanel({ src, jobId, focusIds, pending, onPendingUsed }: { src: string; jobId: string; focusIds: string[]; pending: { text: string; id?: string } | null; onPendingUsed: () => void }) {
-  const [msgs, setMsgs] = useState<Msg[]>([]);
+  const q = useApi<Msg[]>(`platforms/${src}/jobs/${jobId}/chat`, { revalidateOnFocus: false });
+  const msgs = q.data ?? [];
+  const setMsgs = (v: Msg[] | ((m: Msg[]) => Msg[])) => q.mutate((old) => (typeof v === "function" ? v(old ?? []) : v), { revalidate: false });
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const box = useRef<HTMLDivElement>(null);
 
-  useEffect(() => { api<Msg[]>(`platforms/${src}/jobs/${jobId}/chat`).then(setMsgs).catch(() => {}); }, [src, jobId]);
   useEffect(() => { box.current?.scrollTo({ top: box.current.scrollHeight, behavior: "smooth" }); }, [msgs, busy]);
 
   const send = async (message: string, extraFocus: string[] = []) => {

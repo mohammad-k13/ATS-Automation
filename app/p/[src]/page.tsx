@@ -1,8 +1,9 @@
 "use client";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
 import { api, fa, faDate, pct, platformName, type Status } from "../../lib/api";
+import { mutate, refresh, Updating, useApi } from "../../lib/cache";
 
 interface Job {
   id: string; title: string; city: string | null; timeDescription: string | null;
@@ -10,6 +11,7 @@ interface Job {
   stats: { total: number; accepted: number; rejected: number; errors: number; pending: number; avgScore: number | null; lastProcessed: string | null } | null;
   task: { running: boolean; done: number; total: number } | null;
 }
+interface JobsResp { jobs: Job[]; fetchedAt: string | null; error: string | null }
 
 const CRIT: Record<Job["criteriaKind"], [string, string]> = {
   job: ["ok", "شرایط تعریف شده"],
@@ -20,55 +22,59 @@ const CRIT: Record<Job["criteriaKind"], [string, string]> = {
 
 export default function JobsPage() {
   const { src } = useParams<{ src: string }>();
-  const [jobs, setJobs] = useState<Job[] | null>(null);
-  const [err, setErr] = useState("");
-  const [token, setToken] = useState<Status["platforms"][number]["token"] | null>(null);
+  const key = `platforms/${src}/jobs`;
+  const { data: st } = useApi<Status>("status");
+  const { data, error, isValidating, firstLoad } = useApi<JobsResp>(key, { refreshInterval: 60_000 });
   const [q, setQ] = useState("");
+  const [forcing, setForcing] = useState(false);
+  const token = st?.platforms.find((x) => x.name === src)?.token;
 
-  const load = useCallback(async () => {
-    setErr("");
+  const forceRefresh = async () => {
+    setForcing(true);
     try {
-      const st = await api<Status>("status");
-      const p = st.platforms.find((x) => x.name === src);
-      const canAutoLogin = !!(p?.autoLogin.email && p.autoLogin.hasPassword);
-      setToken(p?.token ?? null);
-      if (!p?.token.valid && !canAutoLogin) return setJobs([]);
-      setJobs(null);
-      setJobs(await api<Job[]>(`platforms/${src}/jobs`));
-      const st2 = await api<Status>("status"); // token may have been renewed by auto-login
-      setToken(st2.platforms.find((x) => x.name === src)?.token ?? null);
-      window.dispatchEvent(new Event("ats:status"));
+      await mutate(key, await api<JobsResp>(`${key}?fresh=1`), { revalidate: false });
+      refresh("status");
     } catch (e: any) {
-      setErr(e.message);
-      setJobs([]);
+      await mutate(key, (old: JobsResp | undefined) => (old ? { ...old, error: e.message } : old), { revalidate: false });
+    } finally {
+      setForcing(false);
     }
-  }, [src]);
-  useEffect(() => { load(); }, [load]);
+  };
 
-  const list = (jobs ?? []).filter((j) => !q || j.title.includes(q));
+  const jobs = data?.jobs ?? [];
+  const list = jobs.filter((j) => !q || j.title.includes(q));
+  const problem = error?.message ?? data?.error ?? null;
+
   return (
     <>
       <div className="page-head">
         <div>
           <h1>آگهی‌های {platformName(src)}</h1>
-          <p>آگهی‌های فعال و وضعیت رزومه‌های هرکدام</p>
+          <p className="row">
+            آگهی‌های فعال و وضعیت رزومه‌های هرکدام
+            {data?.fetchedAt && <span className="faint small">· به‌روزرسانی از سایت: {faDate(data.fetchedAt)}</span>}
+            <Updating on={(isValidating || forcing) && !firstLoad} />
+          </p>
         </div>
         <div className="row">
-          {jobs && jobs.length > 3 && <input className="input" style={{ width: 200 }} placeholder="جستجوی آگهی…" value={q} onChange={(e) => setQ(e.target.value)} />}
+          {jobs.length > 3 && <input className="input" style={{ width: 200 }} placeholder="جستجوی آگهی…" value={q} onChange={(e) => setQ(e.target.value)} />}
           <Link className="btn" href={`/report?src=${src}&status=accepted`}>گزارش قبولی‌ها</Link>
-          <button className="btn" onClick={load}>↻ به‌روزرسانی</button>
+          <button className="btn" disabled={forcing} onClick={forceRefresh}>↻ دریافت از سایت</button>
         </div>
       </div>
 
-      {token && !token.valid && jobs !== null && !jobs.length && (
+      {problem && (
         <div className="notice bad" style={{ marginBottom: 16 }}>
-          اتصال به {platformName(src)} برقرار نیست. در <Link href="/settings" style={{ textDecoration: "underline" }}>منابع و توکن‌ها</Link> ایمیل و رمز عبور را وارد کنید تا ورود خودکار انجام شود.
+          {problem}
+          {token && !token.valid && <> — <Link href="/settings" style={{ textDecoration: "underline" }}>ورود در تنظیمات</Link></>}
+          {data?.jobs.length ? <div className="small">آخرین فهرست ذخیره‌شده نمایش داده می‌شود.</div> : null}
         </div>
       )}
-      {err && <div className="notice bad" style={{ marginBottom: 16 }}>{err}</div>}
 
-      {jobs === null ? (
-        <div className="empty">در حال دریافت آگهی‌ها… {token && !token.valid && "(ورود خودکار به سایت، چند ثانیه صبر کنید)"}</div>
+      {firstLoad ? (
+        <div className="panel joblist">
+          {[0, 1, 2, 3].map((i) => <div key={i} className="jobrow"><div className="skeleton" style={{ height: 22, width: "60%" }} /><div className="skeleton" style={{ height: 8 }} /><div /><div /></div>)}
+        </div>
       ) : list.length ? (
         <div className="panel joblist">
           {list.map((j) => {
@@ -112,7 +118,7 @@ export default function JobsPage() {
           })}
         </div>
       ) : (
-        token?.valid && !err && <div className="empty">آگهی فعالی پیدا نشد.</div>
+        !problem && <div className="empty">آگهی فعالی پیدا نشد.</div>
       )}
     </>
   );

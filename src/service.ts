@@ -12,7 +12,7 @@ import { Db, type Row } from "./db";
 import type { ChatMessage } from "./score";
 import { loadSources, validateSourcesYaml } from "./sources/index";
 import { AuthError } from "./sources/http-source";
-import { JobvisionSource } from "./sources/jobvision-source";
+import { JobvisionSource, type JobPost } from "./sources/jobvision-source";
 import { credentials, ensureToken, hasCredentials, loginAndSave, saveCredentials, tokenInfo, tokenKey, writeEnv } from "./auth/token";
 export { tokenInfo };
 import type { Application, Criteria, Source } from "./types";
@@ -270,14 +270,34 @@ ${ctx.meta.adText ? `PUBLISHED JOB AD:\n${ctx.meta.adText.slice(0, 6000)}\n` : "
 }
 
 // ---------- jobs & applications ----------
-export async function listJobs(src: string) {
-  await needToken(src);
-  const s = jobvision(src);
-  const jobs = await s.listJobs();
+const JOBS_TTL_MS = 10 * 60_000;
+
+/**
+ * Active jobs of a platform. The list from the site is cached (DB) for 10 minutes; stats are always live.
+ * `fresh` forces a refetch. If the site fails, the last cached list is returned with `error`.
+ */
+export async function listJobs(src: string, fresh = false) {
+  const key = `jobs:${src}`;
+  const cached = db().getKv<JobPost[]>(key);
+  let list: JobPost[] | null = cached?.value ?? null;
+  let fetchedAt = cached?.updatedAt ?? null;
+  let error: string | null = null;
+  if (fresh || !cached || Date.now() - new Date(cached.updatedAt).getTime() > JOBS_TTL_MS) {
+    try {
+      await needToken(src);
+      list = await jobvision(src).listJobs();
+      db().setKv(key, list);
+      fetchedAt = new Date().toISOString();
+    } catch (e) {
+      if (!list) throw e;
+      error = e instanceof Error ? e.message : String(e);
+    }
+  }
+  const jobs = list ?? [];
   const stats = new Map(db().jobStats(src).map((x) => [x.job_id, x]));
   const scheduled = new Set((rawSourceConfig(src).jobPostIds ?? []).map(String));
   for (const j of jobs) if (db().getJobMeta(src, j.id).title !== j.title) db().setJobMeta(src, j.id, { title: j.title });
-  return jobs.map((j) => {
+  const enriched = jobs.map((j) => {
     const st = stats.get(j.id);
     return {
       ...j,
@@ -287,6 +307,7 @@ export async function listJobs(src: string) {
       task: state().tasks.get(`${src}:${j.id}`) ?? null,
     };
   });
+  return { jobs: enriched, fetchedAt, error };
 }
 
 const parse = (s: string | null) => {

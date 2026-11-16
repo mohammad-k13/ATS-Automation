@@ -1,5 +1,6 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import { useApi } from "../lib/cache";
 import { api } from "../lib/api";
 
 interface Integ {
@@ -9,13 +10,14 @@ interface Integ {
 type Msg = { cls: string; text: string } | null;
 
 export default function Integrations({ onChange }: { onChange: () => void }) {
-  const [d, setD] = useState<Integ | null>(null);
-  useEffect(() => { api<Integ>("integrations").then(setD).catch(() => {}); }, []);
-  if (!d) return <section className="panel panel-pad"><div className="muted">در حال بارگذاری…</div></section>;
+  const q = useApi<Integ>("integrations", { revalidateOnFocus: false });
+  const d = q.data;
+  const setD = (x: Integ) => q.mutate(x, { revalidate: false });
+  if (!d) return <section className="panel panel-pad"><div className="skeleton" style={{ height: 160 }} /></section>;
   return (
     <>
-      <AiCard d={d.ai} onSaved={(x) => { setD(x); onChange(); }} />
-      <TelegramCard d={d.telegram} onSaved={(x) => { setD(x); onChange(); }} />
+      <AiCard key={JSON.stringify(d.ai)} d={d.ai} onSaved={(x) => { setD(x); onChange(); }} />
+      <TelegramCard key={JSON.stringify(d.telegram)} d={d.telegram} onSaved={(x) => { setD(x); onChange(); }} />
     </>
   );
 }

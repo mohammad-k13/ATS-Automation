@@ -1,8 +1,9 @@
 "use client";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
-import { api, platformName, type Status } from "../lib/api";
+import { useEffect } from "react";
+import { platformName, type Status } from "../lib/api";
+import { refresh, useApi } from "../lib/cache";
 
 export function tokenState(t: Status["platforms"][number]["token"]) {
   if (!t.hasToken) return { cls: "bad", label: "بدون توکن" };
@@ -14,16 +15,11 @@ export function tokenState(t: Status["platforms"][number]["token"]) {
 
 export default function Sidebar() {
   const path = usePathname();
-  const [st, setSt] = useState<Status | null>(null);
+  const { data: st } = useApi<Status>("status", { refreshInterval: 60_000 });
   useEffect(() => {
-    const load = () => api<Status>("status").then(setSt).catch(() => {});
-    load();
-    const t = setInterval(load, 60_000);
+    const load = () => refresh("status");
     window.addEventListener("ats:status", load);
-    return () => {
-      clearInterval(t);
-      window.removeEventListener("ats:status", load);
-    };
+    return () => window.removeEventListener("ats:status", load);
   }, []);
 
   return (

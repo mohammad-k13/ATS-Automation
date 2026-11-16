@@ -6,6 +6,7 @@ import ChatPanel from "../../../../components/ChatPanel";
 import ResumeDrawer from "../../../../components/ResumeDrawer";
 import SettingsTab from "../../../../components/SettingsTab";
 import { api, fa, faDate, pct, platformName } from "../../../../lib/api";
+import { refresh as refreshCache, Updating, useApi } from "../../../../lib/cache";
 
 interface App {
   id: string; name: string; job: string | null; decision: "accepted" | "rejected" | "error" | "pending";
@@ -13,64 +14,54 @@ interface App {
 }
 interface Task { running: boolean; done: number; total: number; current: string | null; errors: number; error?: string; log: string[] }
 
-const DEC: Record<App["decision"], [string, string]> = { accepted: ["ok", "قبول"], rejected: ["bad", "رد"], error: ["warn", "خطا"], pending: ["", "بررسی‌نشده"] };
+const DEC: Record<App["decision"], [string, string]> = { accepted: ["ok", "قبول"], rejected: ["rej", "رد"], error: ["warn", "خطا"], pending: ["", "بررسی‌نشده"] };
 const FILTERS: [string, string][] = [["all", "همه"], ["accepted", "قبول"], ["rejected", "رد"], ["pending", "بررسی‌نشده"], ["error", "خطا"]];
 
 function JobPage() {
   const { src, id } = useParams<{ src: string; id: string }>();
   const search = useSearchParams();
   const [tab, setTab] = useState<"resumes" | "settings">("resumes");
-  const [apps, setApps] = useState<App[] | null>(null);
-  const [task, setTask] = useState<Task | null>(null);
   const [sel, setSel] = useState<Set<string>>(new Set());
   const [filter, setFilter] = useState("all");
   const [open, setOpen] = useState<string | null>(null);
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState("");
   const [ask, setAsk] = useState<{ text: string; id?: string } | null>(null);
-  const [hasCriteria, setHasCriteria] = useState<string>("");
   const triedRefresh = useRef(false);
+
+  const base = `platforms/${src}/jobs/${id}`;
+  const taskQ = useApi<Task | null>(`${base}/task`, { refreshInterval: (t) => (t?.running ? 2000 : 0) });
+  const task = taskQ.data ?? null;
+  const running = !!task?.running;
+  const appsQ = useApi<App[]>(`${base}/applications`, { refreshInterval: running ? 2000 : 0 });
+  const apps = appsQ.data ?? null;
+  const settingsQ = useApi<{ criteriaKind: string }>(`${base}/settings`);
+  const hasCriteria = settingsQ.data?.criteriaKind ?? "";
 
   const title = search.get("t") || apps?.find((a) => a.job)?.job || `آگهی ${id}`;
 
-  const loadApps = useCallback(async () => {
-    const list = await api<App[]>(`platforms/${src}/jobs/${id}/applications`);
-    setApps(list);
-    return list;
-  }, [src, id]);
+  // when a scoring run finishes, refresh everything that depends on it
+  const wasRunning = useRef(false);
+  useEffect(() => {
+    if (wasRunning.current && !running) { appsQ.mutate(); refreshCache(`platforms/${src}/jobs`); }
+    wasRunning.current = running;
+  }, [running, appsQ, src]);
 
-  const refresh = useCallback(async () => {
+  const pullFromSite = useCallback(async () => {
     setBusy("refresh"); setErr("");
-    try { await api(`platforms/${src}/jobs/${id}/refresh`, { body: {} }); await loadApps(); }
+    try { await api(`${base}/refresh`, { body: {} }); await appsQ.mutate(); }
     catch (e: any) { setErr(e.message); }
     finally { setBusy(""); }
-  }, [src, id, loadApps]);
+  }, [base, appsQ]);
 
-  const loadSettings = useCallback(() => {
-    api(`platforms/${src}/jobs/${id}/settings`).then((s: any) => setHasCriteria(s.criteriaKind)).catch(() => {});
-  }, [src, id]);
-
-  // first load: show what we have, pull the list from the site if empty
+  // never seen this job: pull its resumes from the site once
   useEffect(() => {
-    loadSettings();
-    loadApps().then((list) => { if (!list.length && !triedRefresh.current) { triedRefresh.current = true; refresh(); } }).catch((e) => setErr(e.message));
-    api<Task | null>(`platforms/${src}/jobs/${id}/task`).then(setTask).catch(() => {});
-  }, [src, id, loadApps, refresh, loadSettings]);
-
-  // poll while scoring
-  useEffect(() => {
-    if (!task?.running) return;
-    const t = setInterval(async () => {
-      const x = await api<Task | null>(`platforms/${src}/jobs/${id}/task`).catch(() => null);
-      setTask(x);
-      loadApps().catch(() => {});
-    }, 2000);
-    return () => clearInterval(t);
-  }, [task?.running, src, id, loadApps]);
+    if (apps && !apps.length && !triedRefresh.current) { triedRefresh.current = true; pullFromSite(); }
+  }, [apps, pullFromSite]);
 
   const score = async (opts: { ids?: string[]; rescore?: boolean }) => {
     setErr("");
-    try { setTask(await api<Task>(`platforms/${src}/jobs/${id}/score`, { body: opts })); }
+    try { await taskQ.mutate(await api<Task>(`${base}/score`, { body: opts }), { revalidate: false }); }
     catch (e: any) { setErr(e.message); }
   };
 
@@ -88,18 +79,16 @@ function JobPage() {
   const selIds = [...sel];
   const allSel = list.length > 0 && list.every((a) => sel.has(a.id));
   const toggle = (aid: string) => setSel((s) => { const n = new Set(s); n.has(aid) ? n.delete(aid) : n.add(aid); return n; });
-  const running = !!task?.running;
   const noCriteria = hasCriteria === "none" || hasCriteria === "default";
 
   return (
     <>
       <div className="job-layout">
         <div>
-          <div className="small" style={{ marginBottom: 8 }}><Link href={`/p/${src}`} className="muted">آگهی‌های {platformName(src)} ›</Link></div>
           <div className="page-head">
             <div>
               <h1>{title}</h1>
-              <p>{fa(counts.all)} رزومه · {fa(scored)} بررسی‌شده</p>
+              <p className="row">{fa(counts.all)} رزومه · {fa(scored)} بررسی‌شده <Updating on={(appsQ.isValidating && !running && !appsQ.firstLoad) || busy === "refresh"} /></p>
             </div>
           </div>
           <div className="tabs">
@@ -108,7 +97,7 @@ function JobPage() {
           </div>
 
           {tab === "settings" ? (
-            <SettingsTab src={src} jobId={id} jobTitle={title} onSaved={loadSettings} />
+            <SettingsTab src={src} jobId={id} jobTitle={title} onSaved={() => { settingsQ.mutate(); refreshCache(`platforms/${src}/jobs`); }} />
           ) : (
             <>
               {noCriteria && (
@@ -121,7 +110,7 @@ function JobPage() {
               <div className="stats">
                 <div className="panel stat"><div className="v">{fa(counts.all)}</div><div className="l">کل رزومه‌ها</div></div>
                 <div className="panel stat"><div className="v" style={{ color: "var(--ok)" }}>{fa(pct(counts.accepted, scored))}٪</div><div className="l">قبول ({fa(counts.accepted)})</div></div>
-                <div className="panel stat"><div className="v" style={{ color: "var(--bad)" }}>{fa(pct(counts.rejected, scored))}٪</div><div className="l">رد ({fa(counts.rejected)})</div></div>
+                <div className="panel stat"><div className="v" style={{ color: "var(--rej)" }}>{fa(pct(counts.rejected, scored))}٪</div><div className="l">رد ({fa(counts.rejected)})</div></div>
                 <div className="panel stat"><div className="v">{fa(avg)}</div><div className="l">میانگین امتیاز</div></div>
               </div>
 
@@ -138,7 +127,7 @@ function JobPage() {
                   <Link className="btn sm" href={`/report?${new URLSearchParams({ src, job: id, ...(selIds.length ? { ids: selIds.join(",") } : filter !== "all" ? { status: filter } : {}) })}`}>
                     گزارش {selIds.length ? `انتخاب‌شده‌ها (${fa(selIds.length)})` : filter !== "all" ? `«${FILTERS.find(([f]) => f === filter)?.[1]}»` : ""}
                   </Link>
-                  <button className="btn sm ghost" disabled={busy === "refresh" || running} onClick={refresh}>{busy === "refresh" ? "در حال دریافت…" : "↻ دریافت از سایت"}</button>
+                  <button className="btn sm ghost" disabled={busy === "refresh" || running} onClick={pullFromSite}>{busy === "refresh" ? "در حال دریافت…" : "↻ دریافت از سایت"}</button>
                 </div>
 
                 {running && task && (
@@ -160,7 +149,7 @@ function JobPage() {
                   {selIds.length > 0 && <><span className="grow" /><button className="btn sm ghost" onClick={() => setSel(new Set())}>لغو انتخاب ({fa(selIds.length)})</button></>}
                 </div>
 
-                {apps === null ? <div className="empty">در حال بارگذاری…</div> : list.length ? (
+                {apps === null ? <div style={{ padding: 14 }} className="stack">{[0, 1, 2, 3].map((i) => <div key={i} className="skeleton" style={{ height: 44 }} />)}</div> : list.length ? (
                   <table className="list">
                     <thead>
                       <tr>
@@ -177,7 +166,7 @@ function JobPage() {
                         return (
                           <tr key={a.id} className={sel.has(a.id) ? "sel" : ""} onClick={() => setOpen(a.id)}>
                             <td onClick={(e) => e.stopPropagation()}><input type="checkbox" checked={sel.has(a.id)} onChange={() => toggle(a.id)} /></td>
-                            <td>{a.score != null && a.decision !== "pending" ? <span className={`score ${a.decision === "accepted" ? "ok" : "bad"}`}>{fa(a.score)}</span> : <span className="faint">—</span>}</td>
+                            <td>{a.score != null && a.decision !== "pending" ? <span className={`score ${a.decision === "accepted" ? "ok" : "rej"}`}>{fa(a.score)}</span> : <span className="faint">—</span>}</td>
                             <td>
                               <div className="row wrap"><b>{a.name}</b><span className={`badge ${cls}`}>{label}</span></div>
                               <div className="small muted">{[a.extra?.lastJob, a.extra?.totalWorkExperienceYears != null ? `${fa(a.extra.totalWorkExperienceYears)} سال سابقه` : null].filter(Boolean).join(" · ")}</div>

@@ -1,17 +1,17 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
-import { api, fa, faDate, platformName } from "../lib/api";
+import { useEffect, useRef } from "react";
+import { useApi } from "../lib/cache";
+import { fa, faDate, platformName } from "../lib/api";
 
-const DEC: Record<string, [string, string]> = { accepted: ["ok", "قبول"], rejected: ["bad", "رد"], error: ["warn", "خطا"], pending: ["", "بررسی‌نشده"] };
+const DEC: Record<string, [string, string]> = { accepted: ["ok", "قبول"], rejected: ["rej", "رد"], error: ["warn", "خطا"], pending: ["", "بررسی‌نشده"] };
 
 export default function ResumeDrawer({ src, id, onClose, onScore, onAsk }: { src: string; id: string; onClose: () => void; onScore: (id: string) => void; onAsk: (text: string, id: string) => void }) {
-  const [a, setA] = useState<any>(null);
-  const [err, setErr] = useState("");
+  const q = useApi<any>(`platforms/${src}/applications/${id}`);
+  const a = q.data ?? null;
+  const err = q.error?.message ?? "";
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
   useEffect(() => {
-    setA(null);
-    api(`platforms/${src}/applications/${id}`).then(setA).catch((e) => setErr(e.message));
     const esc = (e: KeyboardEvent) => e.key === "Escape" && closeRef.current();
     window.addEventListener("keydown", esc);
     return () => window.removeEventListener("keydown", esc);
@@ -30,7 +30,7 @@ export default function ResumeDrawer({ src, id, onClose, onScore, onAsk }: { src
             {a && <div className="small muted">{ex.lastJob ?? ""}</div>}
           </div>
           <div className="row">
-            {a?.score != null && <span className={`score ${a.decision === "accepted" ? "ok" : "bad"}`}>{fa(a.score)}</span>}
+            {a?.score != null && <span className={`score ${a.decision === "accepted" ? "ok" : "rej"}`}>{fa(a.score)}</span>}
             {a && <span className={`badge ${cls}`}>{label}</span>}
             <button className="btn ghost" onClick={onClose} aria-label="بستن">✕</button>
           </div>
@@ -40,7 +40,7 @@ export default function ResumeDrawer({ src, id, onClose, onScore, onAsk }: { src
           {a && (
             <>
               <div className="row wrap">
-                <button className="btn sm primary" onClick={() => onScore(a.id)}>{a.decision === "pending" ? "امتیازدهی این رزومه" : "امتیازدهی مجدد"}</button>
+                <button className="btn sm primary" onClick={() => { onScore(a.id); setTimeout(() => q.mutate(), 4000); }}>{a.decision === "pending" ? "امتیازدهی این رزومه" : "امتیازدهی مجدد"}</button>
                 <button className="btn sm" onClick={() => onAsk(`چرا ${a.name} ${a.decision === "accepted" ? "پذیرفته" : a.decision === "rejected" ? "رد" : "بررسی"} شده؟ نقاط قوت و ضعفش برای این شغل چیست؟`, a.id)}>پرسیدن از دستیار</button>
                 {a.profileUrl && <a className="btn sm" href={a.profileUrl} target="_blank" rel="noreferrer">مشاهده در {platformName(src)} ↗</a>}
               </div>

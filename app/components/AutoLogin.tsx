@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
 import { api, type Status } from "../lib/api";
+import { refresh } from "../lib/cache";
 import TokenButton from "./TokenDialog";
 
 type P = Status["platforms"][number];
@@ -22,6 +23,7 @@ export default function AutoLogin({ p, onChange }: { p: P; onChange: () => void 
       await api(`platforms/${p.name}/login`, { body: { show } });
       setMsg({ cls: "ok", text: "ورود موفق بود و توکن جدید ذخیره شد. از این به بعد هر وقت توکن منقضی شود، سامانه خودش دوباره وارد می‌شود." });
       window.dispatchEvent(new Event("ats:status"));
+      refresh("platforms/", true);
       onChange();
     } catch (e: any) {
       setMsg({ cls: "bad", text: e.message });
