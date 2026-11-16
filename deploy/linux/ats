@@ -1,0 +1,146 @@
+#!/usr/bin/env bash
+# ats — manage the ATS dashboard on a Linux server.
+#   ats status | logs [omniroute] | start | stop | restart | update [--force] | rollback
+#   ats passwd [user] | login jobvision | config | version | update-omniroute
+set -euo pipefail
+
+CONF=${ATS_CONF:-/etc/ats.conf}
+# shellcheck disable=SC1090
+[ -f "$CONF" ] && . "$CONF"
+ROOT=${ATS_ROOT:-/opt/ats}
+DATA=${ATS_DATA:-/var/lib/ats}
+PORT=${ATS_PORT:-3000}
+BRANCH=${ATS_BRANCH:-main}
+RUN_AS=${ATS_RUN_AS:-ats}
+SYSTEMCTL=${ATS_SYSTEMCTL:-systemctl}
+KEEP_RELEASES=${ATS_KEEP_RELEASES:-3}
+export PATH="/usr/local/bin:$PATH"
+
+c_ok=$'\e[32m'; c_err=$'\e[31m'; c_dim=$'\e[2m'; c_off=$'\e[0m'
+log() { echo "${c_dim}[$(date '+%F %T')]${c_off} $*"; }
+ok() { echo "${c_ok}✔${c_off} $*"; }
+die() { echo "${c_err}✖${c_off} $*" >&2; exit 1; }
+
+as_app() { if [ "$RUN_AS" = "root" ] || [ "$(id -un)" = "$RUN_AS" ]; then "$@"; else runuser -u "$RUN_AS" -- "$@"; fi; }
+app_env() {
+  # one word per variable (values never contain spaces)
+  echo "HOME=$DATA DB_PATH=$DATA/ats.db SOURCES_FILE=$DATA/sources.yaml CRITERIA_DIR=$DATA/criteria NEXT_TELEMETRY_DISABLED=1" \
+    ${ATS_NPM_REGISTRY:+npm_config_registry=$ATS_NPM_REGISTRY}
+}
+current_rev() { [ -L "$ROOT/current" ] && basename "$(readlink -f "$ROOT/current")" || true; }
+health() { curl -fsS --max-time 5 "http://127.0.0.1:$PORT/api/health" 2>/dev/null || true; }
+need_root() { [ "$(id -u)" = 0 ] || die "run as root: sudo ats $*"; }
+
+# Build a release next to the running one, switch only if it builds and starts; roll back otherwise.
+cmd_update() {
+  local force=0 auto=0
+  for a in "$@"; do case "$a" in --force) force=1 ;; --auto) auto=1 ;; esac; done
+  need_root update
+  exec 9>"${ATS_LOCK:-/run/ats-update.lock}"
+  flock -n 9 || { log "another update is running"; return 0; }
+
+  git -C "$ROOT/repo" fetch -q --depth=1 origin "$BRANCH" || die "cannot reach GitHub (git fetch failed)"
+  local new cur
+  new=$(git -C "$ROOT/repo" rev-parse FETCH_HEAD)
+  cur=$(current_rev)
+  if [ "$new" = "$cur" ] && [ $force = 0 ]; then log "up to date (${cur:0:7})"; return 0; fi
+
+  if [ $auto = 1 ] && [ -n "$cur" ]; then
+    local busy
+    busy=$(health | sed -n 's/.*"busy":\([0-9]*\).*/\1/p')
+    if [ -n "$busy" ] && [ "$busy" != 0 ]; then log "scoring in progress ($busy run(s)); will update later"; return 0; fi
+  fi
+
+  log "updating ${cur:0:7} → ${new:0:7}"
+  local rel="$ROOT/releases/$new"
+  [ -n "$new" ] && [ -d "$rel" ] && rm -rf -- "$rel"
+  mkdir -p "$rel"
+  git -C "$ROOT/repo" archive FETCH_HEAD | tar -x -C "$rel"
+  echo "$new" >"$rel/VERSION"
+  ln -sfn "$DATA/.env" "$rel/.env"
+  ln -sfn "$DATA/sources.yaml" "$rel/sources.yaml"
+
+  # reuse node_modules from the running release when the lockfile did not change (hard links: fast, no disk)
+  local prev=""
+  [ -n "$cur" ] && prev="$ROOT/releases/$cur"
+  if [ -n "$prev" ] && [ -d "$prev/node_modules" ] && cmp -s "$prev/package-lock.json" "$rel/package-lock.json"; then
+    log "dependencies unchanged, reusing them"
+    cp -al "$prev/node_modules" "$rel/node_modules"
+  fi
+  chown -R "$RUN_AS:$RUN_AS" "$rel" 2>/dev/null || true
+
+  (
+    cd "$rel"
+    if [ ! -d node_modules ]; then
+      log "installing dependencies (npm ci)…"
+      as_app env $(app_env) npm ci --no-audit --no-fund --loglevel=error
+    fi
+    log "building…"
+    as_app env $(app_env) ./node_modules/.bin/next build >"$rel/build.log" 2>&1 || { tail -30 "$rel/build.log"; exit 1; }
+    # browser for automatic Jobvision login (no-op when already installed)
+    as_app env $(app_env) ./node_modules/.bin/playwright-core install chromium >/dev/null 2>&1 || true
+  ) || { rm -rf -- "$rel"; die "build failed; still running ${cur:0:7}"; }
+
+  ln -sfn "$rel" "$ROOT/current.new" && mv -T "$ROOT/current.new" "$ROOT/current"
+  $SYSTEMCTL restart ats 9>&-
+  $SYSTEMCTL restart ats-scheduler 9>&- 2>/dev/null || true
+
+  log "waiting for the new version to start…"
+  local i
+  for i in $(seq 1 45); do
+    if health | grep -q "\"version\":\"$new\""; then
+      ok "updated to ${new:0:7}"
+      # keep the newest releases only
+      ls -1dt "$ROOT"/releases/*/ 2>/dev/null | tail -n +$((KEEP_RELEASES + 1)) | while read -r d; do
+        [ "$(readlink -f "$ROOT/current")/" = "$d" ] || rm -rf -- "$d"
+      done
+      return 0
+    fi
+    sleep 2
+  done
+
+  if [ -n "$prev" ] && [ -d "$prev" ]; then
+    log "new version did not start — rolling back to ${cur:0:7}"
+    ln -sfn "$prev" "$ROOT/current.new" && mv -T "$ROOT/current.new" "$ROOT/current"
+    $SYSTEMCTL restart ats 9>&-
+    $SYSTEMCTL restart ats-scheduler 9>&- 2>/dev/null || true
+  fi
+  die "update to ${new:0:7} failed (see: ats logs)"
+}
+
+cmd_rollback() {
+  need_root rollback
+  local cur prev
+  cur=$(readlink -f "$ROOT/current")
+  prev=$(ls -1dt "$ROOT"/releases/*/ | sed 's:/$::' | grep -vx "$cur" | head -1 || true)
+  [ -n "$prev" ] || die "no previous release to roll back to"
+  ln -sfn "$prev" "$ROOT/current.new" && mv -T "$ROOT/current.new" "$ROOT/current"
+  $SYSTEMCTL restart ats 9>&-
+  $SYSTEMCTL restart ats-scheduler 9>&- 2>/dev/null || true
+  ok "rolled back to $(basename "$prev" | cut -c1-7)"
+}
+
+run_cli() { (cd "$ROOT/current" && as_app env $(app_env) ./node_modules/.bin/tsx src/cli.ts "$@"); }
+
+case "${1:-status}" in
+  status)
+    echo "version : $(current_rev | cut -c1-7)"
+    echo "address : http://$(hostname -I 2>/dev/null | awk '{print $1}'):$PORT"
+    h=$(health); echo "health  : ${h:-not responding}"
+    for s in ats omniroute ats-scheduler ats-update.timer; do printf '%-16s %s\n' "$s" "$($SYSTEMCTL is-active "$s" 2>/dev/null || true)"; done
+    ;;
+  logs) journalctl -u "${2:-ats}" -n 100 -f ;;
+  start | stop | restart) need_root "$1"; $SYSTEMCTL "$1" ats; ok "$1 done" ;;
+  update) shift; cmd_update "$@" ;;
+  rollback) cmd_rollback ;;
+  passwd) need_root passwd; run_cli passwd "${2:-admin}"; $SYSTEMCTL restart ats; ok "login updated" ;;
+  login) shift; run_cli login "$@" ;;
+  config) need_root config; ${EDITOR:-nano} "$DATA/.env"; $SYSTEMCTL restart ats ;;
+  version) current_rev ;;
+  update-omniroute)
+    need_root update-omniroute
+    npm install -g omniroute@latest --legacy-peer-deps ${ATS_NPM_REGISTRY:+--registry "$ATS_NPM_REGISTRY"}
+    $SYSTEMCTL restart omniroute; ok "OmniRoute updated"
+    ;;
+  *) sed -n '2,4p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
+esac

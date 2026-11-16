@@ -8,6 +8,10 @@ export async function api<T = any>(path: string, opts: { method?: string; body?:
     cache: "no-store",
   });
   const data = await res.json().catch(() => ({}));
+  // dashboard session expired / not logged in -> go to the login page
+  if (res.status === 401 && data?.login && !location.pathname.startsWith("/login")) {
+    location.href = `/login?next=${encodeURIComponent(location.pathname + location.search)}`;
+  }
   if (!res.ok) throw new Error(data?.error || `HTTP ${res.status}`);
   return data as T;
 }

@@ -34,7 +34,10 @@ async function launch(opts: LoginOptions) {
   if (pref && (pref.includes("/") || pref.includes("\\"))) tries.push({ label: pref, o: { executablePath: pref } });
   else if (pref) tries.push({ label: pref, o: { channel: pref } });
   tries.push({ label: "msedge", o: { channel: "msedge" } }, { label: "chrome", o: { channel: "chrome" } });
-  if (fs.existsSync("/opt/pw-browsers/chromium")) tries.push({ label: "chromium", o: { executablePath: "/opt/pw-browsers/chromium" } });
+  // Linux servers: system Chromium/Chrome, or Playwright's own Chromium (npx playwright install chromium)
+  for (const p of ["/usr/bin/chromium", "/usr/bin/chromium-browser", "/usr/bin/google-chrome", "/opt/pw-browsers/chromium"])
+    if (fs.existsSync(p)) tries.push({ label: p, o: { executablePath: p } });
+  tries.push({ label: "playwright-chromium", o: {} });
   const errors: string[] = [];
   for (const t of tries) {
     try {

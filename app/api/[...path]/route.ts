@@ -1,5 +1,16 @@
+import fs from "node:fs";
+import { authEnabled, checkPassword, clearCookie, makeSession, readSession, sessionCookie } from "@/src/auth/session";
 import * as svc from "@/src/service";
 import { AuthError } from "@/src/sources/http-source";
+
+/** Release id written by the installer/updater (git commit), "dev" when running from source. */
+const VERSION = (() => {
+  try {
+    return fs.readFileSync("VERSION", "utf8").trim();
+  } catch {
+    return "dev";
+  }
+})();
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -53,7 +64,29 @@ function match(pattern: string, parts: string[]) {
 
 async function handle(req: Request, ctx: Ctx) {
   const { path } = await ctx.params;
+  const route = path.join("/");
   try {
+    // ---- public endpoints
+    if (route === "health") return Response.json({ ok: true, version: VERSION, busy: svc.busyTasks() });
+    if (route === "auth/me") {
+      const s = authEnabled() ? readSession(req.headers.get("cookie")) : null;
+      return Response.json({ enabled: authEnabled(), user: s?.user ?? null, version: VERSION });
+    }
+    if (route === "auth/login" && req.method === "POST") {
+      const b = await req.json().catch(() => ({}));
+      if (!authEnabled()) return Response.json({ ok: true });
+      await new Promise((r) => setTimeout(r, 400)); // slow down password guessing
+      if (!checkPassword(String(b?.user ?? ""), String(b?.password ?? "")))
+        return Response.json({ error: "نام کاربری یا رمز عبور اشتباه است" }, { status: 401 });
+      const secure = new URL(req.url).protocol === "https:" || req.headers.get("x-forwarded-proto") === "https";
+      return Response.json({ ok: true }, { headers: { "set-cookie": sessionCookie(makeSession(String(b.user).trim()), secure) } });
+    }
+    if (route === "auth/logout") return Response.json({ ok: true }, { headers: { "set-cookie": clearCookie() } });
+
+    // ---- everything else needs a session when login is enabled
+    if (authEnabled() && !readSession(req.headers.get("cookie")))
+      return Response.json({ error: "لطفاً وارد شوید", login: true }, { status: 401 });
+
     const body = req.method === "GET" || req.method === "DELETE" ? null : await req.json().catch(() => ({}));
     for (const [m, pat, h] of routes) {
       const p = m === req.method ? match(pat, path) : null;

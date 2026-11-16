@@ -356,6 +356,11 @@ export interface Task {
   error?: string;
 }
 
+/** Number of scoring runs in progress (the auto-updater waits until it is 0). */
+export function busyTasks(): number {
+  return [...state().tasks.values()].filter((t) => t.running).length;
+}
+
 export function getTask(src: string, jobId: string): Task | null {
   return state().tasks.get(`${src}:${jobId}`) ?? null;
 }

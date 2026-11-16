@@ -285,3 +285,5 @@ dialog.modal::backdrop { background: var(--backdrop); }
 .theme-btn { display: inline-flex; align-items: center; gap: 6px; }
 .chat { top: 92px; height: calc(100vh - 116px); }
 @media (max-width: 760px) { .app-header { padding: 10px 16px; } .theme-btn span.l { display: none; } }
+
+.shell:not(:has(.sidebar)) { grid-template-columns: 1fr; }

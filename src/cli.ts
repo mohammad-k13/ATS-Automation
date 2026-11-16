@@ -120,6 +120,27 @@ async function main() {
       console.log("forgotten; next run will re-score");
       break;
 
+    case "passwd": {
+      // Set the dashboard login: npm run ats -- passwd <user>   (password from ATS_NEW_PASSWORD or typed in)
+      const user = arg1 || "admin";
+      let pw = env.ATS_NEW_PASSWORD ?? "";
+      if (!pw) {
+        const { createInterface } = await import("node:readline/promises");
+        const rl = createInterface({ input: process.stdin, output: process.stdout });
+        pw = await rl.question(`New dashboard password for "${user}": `);
+        rl.close();
+      }
+      if (pw.length < 8) throw new Error("Password must be at least 8 characters");
+      const { hashPassword } = await import("./auth/session");
+      const { writeEnv } = await import("./auth/token");
+      const { randomBytes } = await import("node:crypto");
+      writeEnv("ATS_USER", user);
+      writeEnv("ATS_PASSWORD_HASH", hashPassword(pw));
+      if (!env.ATS_SECRET) writeEnv("ATS_SECRET", randomBytes(32).toString("base64url"));
+      console.log(`✔ dashboard login set for "${user}". Restart the dashboard to apply.`);
+      break;
+    }
+
     case "login": {
       // npm run ats -- login jobvision [--email x --password y] [--show]
       const src = arg1 || "jobvision";

@@ -47,9 +47,30 @@ function ThemeToggle() {
   );
 }
 
+function Logout() {
+  const me = useApi<{ enabled: boolean; user: string | null }>("auth/me", { revalidateOnFocus: false });
+  if (!me.data?.enabled || !me.data.user) return null;
+  const out = async () => {
+    await fetch("/api/auth/logout", { method: "POST" });
+    try {
+      localStorage.setItem("ats-cache-v1", "[]");
+    } catch {
+      /* ignore */
+    }
+    location.href = "/login";
+  };
+  return (
+    <button className="btn sm ghost" onClick={out} title={me.data.user}>
+      خروج ({me.data.user})
+    </button>
+  );
+}
+
 function HeaderInner() {
   const router = useRouter();
   const { crumbs, parent } = useCrumbs();
+  const path = usePathname();
+  if (path.startsWith("/login")) return null;
   const back = () => {
     if (window.history.length > 1 && document.referrer.startsWith(location.origin)) router.back();
     else router.push(parent ?? "/");
@@ -66,6 +87,7 @@ function HeaderInner() {
           </span>
         ))}
       </nav>
+      <Logout />
       <ThemeToggle />
     </header>
   );

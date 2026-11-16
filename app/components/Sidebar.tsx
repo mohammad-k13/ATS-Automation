@@ -15,13 +15,15 @@ export function tokenState(t: Status["platforms"][number]["token"]) {
 
 export default function Sidebar() {
   const path = usePathname();
-  const { data: st } = useApi<Status>("status", { refreshInterval: 60_000 });
+  const onLogin = path.startsWith("/login");
+  const { data: st } = useApi<Status>(onLogin ? null : "status", { refreshInterval: 60_000 });
   useEffect(() => {
     const load = () => refresh("status");
     window.addEventListener("ats:status", load);
     return () => window.removeEventListener("ats:status", load);
   }, []);
 
+  if (onLogin) return null;
   return (
     <nav className="sidebar">
       <div className="logo"><i />سامانه جذب</div>

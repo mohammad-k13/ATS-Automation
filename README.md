@@ -2,7 +2,29 @@
 
 Custom ATS for your company: pulls applicants from your **Jobinja / Jobvision employer panel** (via the panel's own JSON endpoints), scores each resume against your per-job criteria (Claude API, Persian + English), and sends **only accepted candidates** (summary + resume file) to Telegram. Rejected candidates are listed in a digest so nothing is silently dropped. Runs on demand or on a schedule; SQLite makes sure nobody is processed or sent twice.
 
-## Setup (Windows / Linux, Node 22.13+)
+## Install on a Linux server (recommended for teams)
+One command installs Node.js, OmniRoute and the dashboard, creates systemd services and a login:
+```bash
+curl -fsSL https://raw.githubusercontent.com/mohammad-k13/ATS-Automation/main/deploy/linux/install.sh | sudo bash
+```
+Then open `http://<server-ip>:3000`. Coworkers only need a browser.
+
+- **Automatic updates** every 30 minutes (`ats-update.timer`). Each version is built next to the running one, switched only after a successful build, health-checked, and **rolled back automatically** if it does not start. Updates wait while resumes are being scored.
+- **Your data** lives in `/var/lib/ats` (`.env`, `sources.yaml`, `criteria/`, `ats.db`) and is never touched by updates.
+- Options: `ATS_PORT`, `ATS_ADMIN_USER`, `ATS_ADMIN_PASSWORD`, `ATS_AUTO_UPDATE=0`, `ATS_NPM_REGISTRY` (npm mirror), `ATS_NODE_MIRROR` — e.g. `curl ... | sudo ATS_PORT=8080 bash`.
+- The server must be able to reach jobvision.ir (it blocks non-Iranian IPs) and GitHub; Telegram may need `TELEGRAM_PROXY`.
+
+```bash
+ats status              # versions, health, services
+ats logs                # live logs (ats logs omniroute)
+sudo ats update         # update now
+sudo ats rollback       # previous version
+sudo ats passwd admin   # change the dashboard password
+sudo ats config         # edit .env
+sudo ats update-omniroute
+```
+
+## Setup for development (Windows / Linux, Node 22.13+)
 ```bash
 git clone https://github.com/mohammad-k13/ATS-Automation.git
 cd ATS-Automation
