@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { tokenState } from "../components/Sidebar";
 import AutoLogin from "../components/AutoLogin";
+import GoogleSheet from "../components/GoogleSheet";
 import Integrations from "../components/Integrations";
 import { api, platformName, type Status } from "../lib/api";
 import { refresh, useApi } from "../lib/cache";
@@ -56,6 +57,8 @@ export default function SettingsPage() {
         </section>
 
         <Integrations onChange={loadStatus} />
+
+        <GoogleSheet />
 
         <section className="panel panel-pad stack">
           <div className="section-title">

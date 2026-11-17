@@ -55,6 +55,13 @@ const routes: [string, string, H][] = [
     return fileResponse(f.data, f.name, f.name.endsWith(".pdf") ? "application/pdf" : "application/octet-stream");
   }],
   ["POST", "platforms/:src/jobs/:id/reject", (p, b) => svc.rejectOnSite(p.src, p.id, (b?.ids ?? []).map(String))],
+  ["GET", "gsheet", () => svc.getSheetSettings()],
+  ["PUT", "gsheet", (_, b) => svc.saveSheetSettings(b ?? {})],
+  ["POST", "gsheet/test", (_, b) => svc.testSheet(b ?? {})],
+  ["POST", "gsheet/mapping/suggest", () => svc.suggestSheetMapping()],
+  ["POST", "gsheet/rule", (_, b) => svc.sheetRuleFromText(String(b?.text ?? ""))],
+  ["POST", "platforms/:src/gsheet/preview", (p, b) => svc.previewSheet(p.src, b?.jobId)],
+  ["POST", "platforms/:src/gsheet/sync", (p, b) => svc.syncSheet(p.src, b?.jobId)],
   ["GET", "integrations", () => svc.getIntegrations()],
   ["PUT", "integrations/ai", (_, b) => svc.saveAiSettings(b ?? {})],
   ["POST", "integrations/ai/models", (_, b) => svc.listAiModels(b ?? {})],

@@ -65,7 +65,8 @@ const parse = (s: string | null) => {
   }
 };
 
-function cell(key: string, r: Row & { unit?: string | null }, unit: string): string | number {
+/** One field of one candidate, for Excel exports and the Google Sheet. */
+export function fieldValue(key: string, r: Row & { unit?: string | null }, unit: string): string | number {
   const ex = parse(r.extra_json) ?? {};
   const res = parse(r.result_json) ?? {};
   const scored = r.decision === "accepted" || r.decision === "partial" || r.decision === "rejected";
@@ -112,7 +113,7 @@ export function buildExport(specInput: unknown, rows: Row[], unit: string): Expo
     id: Math.random().toString(36).slice(2, 10),
     title: spec.title,
     columns: ["ردیف", ...columns.map((c) => EXPORT_COLUMNS[c]), ...extra.map((e) => e.label)],
-    rows: list.map((r, i) => [i + 1, ...columns.map((c) => cell(c, r, unit)), ...extra.map((e) => e.values[r.id] ?? "")]),
+    rows: list.map((r, i) => [i + 1, ...columns.map((c) => fieldValue(c, r, unit)), ...extra.map((e) => e.values[r.id] ?? "")]),
   };
 }
 

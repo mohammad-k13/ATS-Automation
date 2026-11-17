@@ -22,6 +22,7 @@ export interface Row {
   phone: string | null;
   site_status: string | null;
   site_status_at: string | null;
+  gsheet_synced_at: string | null;
   attempts: number;
   notified: number;
   processed_at: string;
@@ -59,6 +60,7 @@ const EXTRA_COLUMNS: Record<string, string> = {
   phone: "TEXT",
   site_status: "TEXT", // status we set on the job site, e.g. "rejected"
   site_status_at: "TEXT",
+  gsheet_synced_at: "TEXT",
 };
 
 export class Db {
@@ -117,6 +119,12 @@ export class Db {
   setJobMeta(source: string, jobId: string, fields: Partial<Record<"unit" | "title" | "description" | "ad_text" | "ad_fetched_at", string>>) {
     this.db.prepare("INSERT INTO jobs_meta (source,job_id) VALUES (?,?) ON CONFLICT(source,job_id) DO NOTHING").run(source, jobId);
     for (const [k, v] of Object.entries(fields)) this.db.prepare(`UPDATE jobs_meta SET ${k}=? WHERE source=? AND job_id=?`).run(v ?? "", source, jobId);
+  }
+
+  markSheetSynced(source: string, ids: string[]) {
+    const at = new Date().toISOString();
+    const st = this.db.prepare("UPDATE applications SET gsheet_synced_at=? WHERE source=? AND id=?");
+    for (const id of ids) st.run(at, source, id);
   }
 
   setSiteStatus(source: string, ids: string[], status: string) {

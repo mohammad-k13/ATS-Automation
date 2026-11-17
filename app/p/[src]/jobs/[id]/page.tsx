@@ -11,7 +11,7 @@ import { refresh as refreshCache, Updating, useApi } from "../../../../lib/cache
 interface App {
   id: string; name: string; job: string | null; decision: "accepted" | "partial" | "rejected" | "error" | "pending";
   score: number | null; error: string | null; result: any; extra: any; profileUrl: string | null; appliedAt: string | null; processedAt: string | null;
-  siteStatus?: string | null; hasAttachment?: boolean;
+  siteStatus?: string | null; hasAttachment?: boolean; sheetSyncedAt?: string | null;
 }
 interface ZipTask { running: boolean; done: number; total: number; current: string | null; token?: string; filename?: string; errors: string[]; error?: string }
 interface Task { running: boolean; done: number; total: number; current: string | null; errors: number; error?: string; log: string[]; cancelRequested?: boolean; cancelled?: boolean }
@@ -85,6 +85,20 @@ function JobPage() {
     setBusy("reject"); setErr("");
     try { await api(`${base}/reject`, { body: { ids } }); await appsQ.mutate(); setSel(new Set()); }
     catch (e: any) { setErr(e.message); }
+    finally { setBusy(""); }
+  };
+
+  // ---- Google Sheet for this job
+  const sendToSheet = async () => {
+    setBusy("sheet"); setErr("");
+    try {
+      const p = await api<{ count: number; alreadyInSheet: number; ruleText: string[] }>(`platforms/${src}/gsheet/preview`, { body: { jobId: id } });
+      if (!p.count) { alert(`کارجوی جدیدی برای افزودن نیست.${p.alreadyInSheet ? `\n${p.alreadyInSheet.toLocaleString("fa-IR")} نفر از قبل در شیت هستند.` : ""}`); return; }
+      if (!confirm(`${p.count.toLocaleString("fa-IR")} نفر به گوگل شیت اضافه می‌شوند.\nشرط: ${p.ruleText.join("، ")}\nادامه می‌دهید؟`)) return;
+      const r = await api<{ added: number }>(`platforms/${src}/gsheet/sync`, { body: { jobId: id } });
+      alert(`${r.added.toLocaleString("fa-IR")} ردیف به شیت اضافه شد.`);
+      await appsQ.mutate();
+    } catch (e: any) { setErr(e.message); }
     finally { setBusy(""); }
   };
 
@@ -179,6 +193,7 @@ function JobPage() {
                   ) : (
                     <button className="btn sm" disabled={!!zip?.running || !(counts.accepted + counts.partial)} onClick={() => startZip()}>⬇ دانلود قبول و نسبی ({fa(counts.accepted + counts.partial)})</button>
                   )}
+                  <button className="btn sm" disabled={busy === "sheet"} onClick={sendToSheet}>{busy === "sheet" ? "در حال ارسال…" : "ارسال به گوگل شیت"}</button>
                   <Link className="btn sm" href={`/report?${new URLSearchParams({ src, job: id, ...(selIds.length ? { ids: selIds.join(",") } : filter !== "all" ? { status: filter } : {}) })}`}>
                     گزارش {selIds.length ? `انتخاب‌شده‌ها (${fa(selIds.length)})` : filter !== "all" ? `«${FILTERS.find(([f]) => f === filter)?.[1]}»` : ""}
                   </Link>
@@ -246,7 +261,7 @@ function JobPage() {
                             <td onClick={(e) => e.stopPropagation()}><input type="checkbox" checked={sel.has(a.id)} onChange={() => toggle(a.id)} /></td>
                             <td>{a.score != null && a.decision !== "pending" ? <span className={`score ${a.decision === "accepted" ? "ok" : a.decision === "partial" ? "partial" : "rej"}`}>{fa(a.score)}</span> : <span className="faint">—</span>}</td>
                             <td>
-                              <div className="row wrap"><b>{a.name}</b><span className={`badge ${cls}`}>{label}</span>{a.extra?.experienceAlerts?.length > 0 && <span className="alert-count" title={a.extra.experienceAlerts.join("\n")}>⚠ {fa(a.extra.experienceAlerts.length)}</span>}{a.siteStatus === "rejected" && <span className="badge rej">رد شده در {platformName(src)}</span>}</div>
+                              <div className="row wrap"><b>{a.name}</b><span className={`badge ${cls}`}>{label}</span>{a.extra?.experienceAlerts?.length > 0 && <span className="alert-count" title={a.extra.experienceAlerts.join("\n")}>⚠ {fa(a.extra.experienceAlerts.length)}</span>}{a.siteStatus === "rejected" && <span className="badge rej">رد شده در {platformName(src)}</span>}{a.sheetSyncedAt && <span className="badge" title="در گوگل شیت ثبت شده">✓ شیت</span>}</div>
                               <div className="small muted">{[a.extra?.lastJob, a.extra?.totalWorkExperienceYears != null ? `${fa(a.extra.totalWorkExperienceYears)} سال سابقه` : null].filter(Boolean).join(" · ")}</div>
                             </td>
                             <td className="sum">
