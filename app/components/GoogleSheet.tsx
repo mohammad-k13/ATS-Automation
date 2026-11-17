@@ -2,13 +2,14 @@
 import { useEffect, useState } from "react";
 import { api, fa, type Status } from "../lib/api";
 import { useApi } from "../lib/cache";
+import TagsInput from "./TagsInput";
 
 interface Rule { decisions: string[]; minScore: number | null; maxScore: number | null; minYears: number | null; maxExperienceAlerts: number | null; cities: string[]; excludeRejectedOnSite: boolean; onlyWithAttachment: boolean }
 interface Settings {
   url: string; sheet: string; headers: string[]; mapping: Record<string, string | null>; keyColumn: string | null;
   conditionText: string; rule: Rule; ruleText: string[]; autoSync: boolean; script: string; fields: Record<string, string>;
 }
-interface Preview { headers: string[]; rows: string[][]; count: number; alreadyInSheet: number; ruleText: string[] }
+interface Preview { headers: string[]; rows: string[][]; count: number; alreadyInSheet: number; ruleText: string[]; skipped: { name: string; reason: string }[] }
 type Msg = { cls: string; text: string } | null;
 
 export default function GoogleSheet() {
@@ -22,7 +23,7 @@ export default function GoogleSheet() {
   const [mapping, setMapping] = useState<Record<string, string | null>>({});
   const [keyColumn, setKeyColumn] = useState<string | null>(null);
   const [cond, setCond] = useState("");
-  const [draftRule, setDraftRule] = useState<{ rule: Rule; ruleText: string[] } | null>(null);
+  const [rule, setRule] = useState<Rule | null>(null);
   const [busy, setBusy] = useState("");
   const [msg, setMsg] = useState<Msg>(null);
   const [preview, setPreview] = useState<Preview | null>(null);
@@ -34,6 +35,7 @@ export default function GoogleSheet() {
     setMapping(d.mapping);
     setKeyColumn(d.keyColumn);
     setCond(d.conditionText);
+    setRule(d.rule);
   }, [d]);
 
   const run = async (name: string, fn: () => Promise<void>) => {
@@ -48,6 +50,7 @@ export default function GoogleSheet() {
   if (!d) return <section className="panel panel-pad"><div className="skeleton" style={{ height: 160 }} /></section>;
   const connected = !!d.url && d.headers.length > 0;
   const mappingDirty = JSON.stringify(mapping) !== JSON.stringify(d.mapping) || keyColumn !== d.keyColumn;
+  const ruleDirty = !!rule && JSON.stringify(rule) !== JSON.stringify(d.rule);
 
   return (
     <section className="panel panel-pad stack" style={{ gap: 18 }}>
@@ -159,27 +162,52 @@ export default function GoogleSheet() {
         </div>
       )}
 
-      {/* 3. condition */}
-      {connected && (
-        <div className="stack" style={{ gap: 10 }}>
-          <h3>۳. شرط اضافه شدن به شیت</h3>
-          <textarea className="textarea" rows={3} value={cond} onChange={(e) => setCond(e.target.value)}
-            placeholder="مثلاً: فقط قبول و تایید نسبی با امتیاز بالای ۶۰ که در سوابق کاری‌شان فاصله یا تغییر حوزه ندارند" />
-          <div className="row">
-            <button className="btn sm" disabled={!cond.trim() || busy !== ""} onClick={() => run("rule", async () => setDraftRule(await api("gsheet/rule", { body: { text: cond } })))}>
-              {busy === "rule" ? "در حال تبدیل…" : "تبدیل به قانون"}
-            </button>
+      {/* 3. condition: a simple form; plain-language text only fills the form */}
+      {connected && rule && (
+        <div className="stack" style={{ gap: 12 }}>
+          <div className="row between">
+            <h3>۳. چه کسانی به شیت اضافه شوند؟</h3>
+            {ruleDirty && <span className="badge warn">ذخیره‌نشده</span>}
           </div>
-          <div className="notice" style={{ background: "var(--bg)", color: "var(--text)" }}>
-            <div className="small muted" style={{ marginBottom: 4 }}>{draftRule ? "قانون پیشنهادی (هنوز ذخیره نشده):" : "قانون فعلی:"}</div>
-            <ul style={{ margin: 0, paddingInlineStart: 18 }}>{(draftRule?.ruleText ?? d.ruleText).map((x) => <li key={x}>{x}</li>)}</ul>
+          <div className="row wrap" style={{ gap: 14 }}>
+            <span className="small" style={{ fontWeight: 600 }}>وضعیت:</span>
+            {([["accepted", "قبول"], ["partial", "تایید نسبی"], ["rejected", "رد"], ["pending", "بررسی‌نشده"]] as const).map(([k, l]) => (
+              <label key={k} className="row small" style={{ cursor: "pointer" }}>
+                <input type="checkbox" checked={rule.decisions.includes(k)}
+                  onChange={(e) => setRule({ ...rule, decisions: e.target.checked ? [...rule.decisions, k] : rule.decisions.filter((x) => x !== k) })} /> {l}
+              </label>
+            ))}
           </div>
-          {draftRule && (
-            <div className="row">
-              <button className="btn primary sm" onClick={() => { save({ conditionText: cond, rule: draftRule.rule }); setDraftRule(null); }}>تأیید و ذخیرهٔ قانون</button>
-              <button className="btn sm ghost" onClick={() => setDraftRule(null)}>انصراف</button>
+          <div className="grid2">
+            <label className="field"><span>حداقل امتیاز</span>
+              <input className="input" type="number" min={0} max={100} placeholder="بدون محدودیت" value={rule.minScore ?? ""}
+                onChange={(e) => setRule({ ...rule, minScore: e.target.value === "" ? null : Number(e.target.value) })} /></label>
+            <label className="field"><span>حداقل سابقهٔ کار (سال)</span>
+              <input className="input" type="number" min={0} placeholder="بدون محدودیت" value={rule.minYears ?? ""}
+                onChange={(e) => setRule({ ...rule, minYears: e.target.value === "" ? null : Number(e.target.value) })} /></label>
+          </div>
+          <label className="field"><span>فقط این شهرها</span>
+            <TagsInput value={rule.cities} onChange={(v) => setRule({ ...rule, cities: v })} placeholder="خالی = همهٔ شهرها" /></label>
+          <div className="stack" style={{ gap: 6 }}>
+            <label className="row small" style={{ cursor: "pointer" }}><input type="checkbox" checked={rule.maxExperienceAlerts === 0}
+              onChange={(e) => setRule({ ...rule, maxExperienceAlerts: e.target.checked ? 0 : null })} /> فقط کسانی که در سوابق کاری فاصله، تغییر حوزه یا سابقهٔ همزمان ندارند</label>
+            <label className="row small" style={{ cursor: "pointer" }}><input type="checkbox" checked={rule.onlyWithAttachment}
+              onChange={(e) => setRule({ ...rule, onlyWithAttachment: e.target.checked })} /> فقط کسانی که فایل رزومه پیوست کرده‌اند</label>
+            <label className="row small" style={{ cursor: "pointer" }}><input type="checkbox" checked={rule.excludeRejectedOnSite}
+              onChange={(e) => setRule({ ...rule, excludeRejectedOnSite: e.target.checked })} /> کسانی که در جاب‌ویژن رد شده‌اند اضافه نشوند</label>
+          </div>
+          <details>
+            <summary className="small" style={{ cursor: "pointer", color: "var(--accent)" }}>یا شرط را به زبان ساده بنویسید تا فرم پر شود</summary>
+            <div className="stack" style={{ gap: 8, marginTop: 8 }}>
+              <textarea className="textarea" rows={2} value={cond} onChange={(e) => setCond(e.target.value)} placeholder="مثلاً: قبول و تایید نسبی با امتیاز بالای ۶۰ که ساکن اصفهان هستند" />
+              <div><button className="btn sm" disabled={!cond.trim() || busy !== ""} onClick={() => run("rule", async () => {
+                const r = await api<{ rule: Rule }>("gsheet/rule", { body: { text: cond } });
+                setRule(r.rule);
+                setMsg({ cls: "", text: "فرم پر شد؛ بررسی کنید و «ذخیرهٔ شرط» را بزنید." });
+              })}>{busy === "rule" ? "در حال تبدیل…" : "پر کردن فرم"}</button></div>
             </div>
-          )}
+          </details>
+          <div><button className="btn primary sm" disabled={!ruleDirty || busy !== "" || !rule.decisions.length} onClick={() => save({ rule, conditionText: cond })}>ذخیرهٔ شرط</button></div>
         </div>
       )}
 
@@ -208,7 +236,15 @@ export default function GoogleSheet() {
           </div>
           {preview && (
             <div className="stack" style={{ gap: 6 }}>
-              <div className="small">{preview.count ? `${fa(preview.count)} ردیف جدید اضافه می‌شود` : "ردیف جدیدی برای افزودن نیست"}{preview.alreadyInSheet ? ` · ${fa(preview.alreadyInSheet)} نفر از قبل در شیت هستند` : ""}</div>
+              <div className="small">{preview.count ? `${fa(preview.count)} ردیف جدید اضافه می‌شود` : "ردیف جدیدی برای افزودن نیست"}{preview.skipped.length ? ` · ${fa(preview.skipped.length)} نفر اضافه نمی‌شوند` : ""}</div>
+              {preview.skipped.length > 0 && (
+                <details>
+                  <summary className="small" style={{ cursor: "pointer", color: "var(--accent)" }}>چه کسانی اضافه نمی‌شوند و چرا؟</summary>
+                  <ul className="small" style={{ margin: "6px 0 0", paddingInlineStart: 18 }}>
+                    {preview.skipped.map((x, i) => <li key={i}><b>{x.name}</b>: {x.reason}</li>)}
+                  </ul>
+                </details>
+              )}
               {preview.count > 0 && (
                 <div className="md-table" style={{ maxHeight: 320, overflow: "auto" }}>
                   <table>

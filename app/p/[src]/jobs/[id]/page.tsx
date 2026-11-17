@@ -5,6 +5,7 @@ import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "rea
 import ChatPanel from "../../../../components/ChatPanel";
 import ResumeDrawer from "../../../../components/ResumeDrawer";
 import SettingsTab from "../../../../components/SettingsTab";
+import { SiteStatusBadge } from "../../../../components/SiteStatus";
 import { api, fa, faDate, pct, platformName } from "../../../../lib/api";
 import { refresh as refreshCache, Updating, useApi } from "../../../../lib/cache";
 
@@ -92,11 +93,27 @@ function JobPage() {
   const sendToSheet = async () => {
     setBusy("sheet"); setErr("");
     try {
-      const p = await api<{ count: number; alreadyInSheet: number; ruleText: string[] }>(`platforms/${src}/gsheet/preview`, { body: { jobId: id } });
-      if (!p.count) { alert(`کارجوی جدیدی برای افزودن نیست.${p.alreadyInSheet ? `\n${p.alreadyInSheet.toLocaleString("fa-IR")} نفر از قبل در شیت هستند.` : ""}`); return; }
-      if (!confirm(`${p.count.toLocaleString("fa-IR")} نفر به گوگل شیت اضافه می‌شوند.\nشرط: ${p.ruleText.join("، ")}\nادامه می‌دهید؟`)) return;
+      const p = await api<{ count: number; ruleText: string[]; skipped: { name: string; reason: string }[] }>(`platforms/${src}/gsheet/preview`, { body: { jobId: id } });
+      const why = p.skipped.length ? `\n\nاضافه نمی‌شوند (${p.skipped.length.toLocaleString("fa-IR")} نفر):\n${p.skipped.slice(0, 15).map((x) => `• ${x.name}: ${x.reason}`).join("\n")}${p.skipped.length > 15 ? "\n…" : ""}` : "";
+      if (!p.count) { alert(`کارجوی جدیدی برای افزودن نیست.${why}`); return; }
+      if (!confirm(`${p.count.toLocaleString("fa-IR")} نفر به گوگل شیت اضافه می‌شوند.\nشرط: ${p.ruleText.join("، ")}${why}\n\nادامه می‌دهید؟`)) return;
       const r = await api<{ added: number }>(`platforms/${src}/gsheet/sync`, { body: { jobId: id } });
       alert(`${r.added.toLocaleString("fa-IR")} ردیف به شیت اضافه شد.`);
+      await appsQ.mutate();
+    } catch (e: any) { setErr(e.message); }
+    finally { setBusy(""); }
+  };
+
+  // ---- set Jobvision statuses from the job's map (قبول → تایید اولیه …)
+  const applyStatuses = async (ids?: string[]) => {
+    setBusy("status"); setErr("");
+    try {
+      const plan = await api<{ label: string; count: number; names: string[] }[]>(`${base}/site-status/preview`, { body: { ids } });
+      if (!plan.length) { alert(`وضعیت همه از قبل درست است؛ تغییری لازم نیست.\n(قانون‌ها در «تنظیمات» ← «وضعیت در ${platformName(src)}»)`); return; }
+      const lines = plan.map((g) => `• ${g.count.toLocaleString("fa-IR")} نفر ← «${g.label}»: ${g.names.join("، ")}${g.count > g.names.length ? "، …" : ""}`).join("\n");
+      if (!confirm(`این وضعیت‌ها در خود ${platformName(src)} تغییر می‌کند (ممکن است به کارجو اطلاع داده شود):\n\n${lines}\n\nادامه می‌دهید؟`)) return;
+      const r = await api<{ done: Record<string, number> }>(`${base}/site-status/apply`, { body: { ids } });
+      alert(Object.entries(r.done).map(([k, v]) => `${v.toLocaleString("fa-IR")} نفر ← «${k}»`).join("\n") || "تغییری انجام نشد");
       await appsQ.mutate();
     } catch (e: any) { setErr(e.message); }
     finally { setBusy(""); }
@@ -193,6 +210,9 @@ function JobPage() {
                   ) : (
                     <button className="btn sm" disabled={!!zip?.running || !(counts.accepted + counts.partial)} onClick={() => startZip()}>⬇ دانلود قبول و نسبی ({fa(counts.accepted + counts.partial)})</button>
                   )}
+                  <button className="btn sm" disabled={busy === "status"} onClick={() => applyStatuses(selIds.length ? selIds : undefined)}>
+                    {busy === "status" ? "در حال اعمال…" : `اعمال وضعیت در ${platformName(src)}${selIds.length ? ` (${fa(selIds.length)})` : ""}`}
+                  </button>
                   <button className="btn sm" disabled={busy === "sheet"} onClick={sendToSheet}>{busy === "sheet" ? "در حال ارسال…" : "ارسال به گوگل شیت"}</button>
                   <Link className="btn sm" href={`/report?${new URLSearchParams({ src, job: id, ...(selIds.length ? { ids: selIds.join(",") } : filter !== "all" ? { status: filter } : {}) })}`}>
                     گزارش {selIds.length ? `انتخاب‌شده‌ها (${fa(selIds.length)})` : filter !== "all" ? `«${FILTERS.find(([f]) => f === filter)?.[1]}»` : ""}
@@ -261,7 +281,7 @@ function JobPage() {
                             <td onClick={(e) => e.stopPropagation()}><input type="checkbox" checked={sel.has(a.id)} onChange={() => toggle(a.id)} /></td>
                             <td>{a.score != null && a.decision !== "pending" ? <span className={`score ${a.decision === "accepted" ? "ok" : a.decision === "partial" ? "partial" : "rej"}`}>{fa(a.score)}</span> : <span className="faint">—</span>}</td>
                             <td>
-                              <div className="row wrap"><b>{a.name}</b><span className={`badge ${cls}`}>{label}</span>{a.extra?.experienceAlerts?.length > 0 && <span className="alert-count" title={a.extra.experienceAlerts.join("\n")}>⚠ {fa(a.extra.experienceAlerts.length)}</span>}{a.siteStatus === "rejected" && <span className="badge rej">رد شده در {platformName(src)}</span>}{a.sheetSyncedAt && <span className="badge" title="در گوگل شیت ثبت شده">✓ شیت</span>}</div>
+                              <div className="row wrap"><b>{a.name}</b><span className={`badge ${cls}`}>{label}</span>{a.extra?.experienceAlerts?.length > 0 && <span className="alert-count" title={a.extra.experienceAlerts.join("\n")}>⚠ {fa(a.extra.experienceAlerts.length)}</span>}<SiteStatusBadge status={a.siteStatus} src={src} />{a.sheetSyncedAt && <span className="badge" title="در گوگل شیت ثبت شده">✓ شیت</span>}</div>
                               <div className="small muted">{[a.extra?.lastJob, a.extra?.totalWorkExperienceYears != null ? `${fa(a.extra.totalWorkExperienceYears)} سال سابقه` : null].filter(Boolean).join(" · ")}</div>
                             </td>
                             <td className="sum">

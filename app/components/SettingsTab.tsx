@@ -3,6 +3,7 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { isFilterKeyword } from "@/src/keywords";
 import { api, fa, platformName } from "../lib/api";
+import { StatusMapSection, type StatusMap } from "./SiteStatus";
 import TagsInput from "./TagsInput";
 import { useApi } from "../lib/cache";
 
@@ -11,7 +12,7 @@ interface Criteria {
   hardFilters: { minYears: number | null; requireAny: string[]; rejectIfAny: string[] };
   instructions: string;
 }
-interface Settings { criteria: Criteria | null; criteriaKind: string; criteriaName: string | null; scheduled: boolean; sourceStatus: number; unit: string; description: string; adText: string; adFetchedAt: string | null }
+interface Settings { criteria: Criteria | null; criteriaKind: string; criteriaName: string | null; scheduled: boolean; sourceStatus: number; unit: string; description: string; adText: string; adFetchedAt: string | null; statusMap: StatusMap }
 
 const EMPTY: Criteria = { threshold: 70, partialThreshold: 50, mustHave: [], niceToHave: [], hardFilters: { minYears: null, requireAny: [], rejectIfAny: [] }, instructions: "" };
 
@@ -204,6 +205,9 @@ export default function SettingsTab({ src, jobId, jobTitle, onSaved, scoringRunn
         )}
         <div className="row"><button className="btn primary" disabled={busy !== "" || (!dirty && !descDirty && s.criteriaKind === "job")} onClick={save}>{busy === "save" ? "در حال ذخیره…" : "ذخیره شرایط"}</button></div>
       </section>
+
+      <StatusMapSection src={src} jobId={jobId} initial={s.statusMap ?? { accepted: 4, partial: 6, rejected: 5, auto: false }}
+        onSaved={(m) => setS((o) => (o ? { ...o, statusMap: m } : o))} />
 
       <section className="panel panel-pad stack">
         <h2>اطلاعات آگهی</h2>

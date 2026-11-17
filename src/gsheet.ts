@@ -66,11 +66,26 @@ export async function callSheet<T = any>(url: string, payload: Record<string, un
   try {
     json = JSON.parse(text);
   } catch {
-    if (/accounts\.google\.com|ServiceLogin/i.test(text)) throw new Error("گوگل درخواست ورود کرد؛ در Deploy گزینهٔ «Who has access» را روی «Anyone» بگذارید.");
-    throw new Error(`پاسخ نامعتبر از گوگل (HTTP ${res.status})`);
+    throw new Error(explainGoogleHtml(text, res.status));
   }
   if (!json.ok) throw new Error(json.error || "خطای ناشناخته از اپس‌اسکریپت");
   return json as T;
+}
+
+/** Google answered with a web page instead of data: say what it means. */
+export function explainGoogleHtml(html: string, status: number): string {
+  const plain = html.replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>/gi, " ").replace(/<[^>]+>/g, " ").replace(/&nbsp;|&#39;|&quot;/g, " ").replace(/\s+/g, " ").trim();
+  const title = html.match(/<title>([^<]*)<\/title>/i)?.[1]?.trim() ?? "";
+  const known: [RegExp, string][] = [
+    [/accounts\.google\.com|ServiceLogin|Sign in/i, "گوگل درخواست ورود کرد: در Deploy گزینهٔ «Who has access» باید «Anyone» باشد (نه «Anyone with Google account»)."],
+    [/Script function not found|doPost/i, "تابع doPost پیدا نشد: کد را کامل بچسبانید، ذخیره کنید و دوباره Deploy کنید (Manage deployments ← ویرایش ← Version: New version)."],
+    [/authoriz|permission|needs your permission/i, "اسکریپت هنوز مجوز ندارد: در ویرایشگر Apps Script یک بار Run بزنید و دسترسی‌ها را تأیید کنید، سپس دوباره Deploy کنید."],
+    [/unable to open the file|Page Not Found|not found/i, "آدرس Web app اشتباه یا قدیمی است: از Deploy ← Manage deployments آدرس جدید را کپی کنید."],
+    [/exceeded|timed out|Timeout/i, "اجرای اسکریپت در گوگل بیش از حد طول کشید؛ دوباره امتحان کنید."],
+    [/TypeError|ReferenceError|Exception|Error/i, "اسکریپت در گوگل خطا داد."],
+  ];
+  const hint = known.find(([re]) => re.test(plain) || re.test(title))?.[1] ?? "گوگل به‌جای داده یک صفحهٔ وب برگرداند.";
+  return `${hint}\nپیام گوگل (HTTP ${status}): ${(title ? title + " — " : "") + plain.slice(0, 220)}`;
 }
 
 // ------------------------------------------------------------------ which candidates go to the sheet
@@ -98,17 +113,22 @@ export interface RuleInput {
 
 const norm = (s: string) => s.replace(/[يى]/g, "ی").replace(/ك/g, "ک").replace(/\s+/g, " ").trim();
 
-export function ruleMatches(rule: SheetRule, c: RuleInput): boolean {
-  if (rule.decisions.length && !rule.decisions.includes(c.decision as any)) return false;
-  if (rule.minScore != null && (c.score == null || c.score < rule.minScore)) return false;
-  if (rule.maxScore != null && (c.score == null || c.score > rule.maxScore)) return false;
-  if (rule.minYears != null && (c.years == null || c.years < rule.minYears)) return false;
-  if (rule.maxExperienceAlerts != null && c.experienceAlerts > rule.maxExperienceAlerts) return false;
-  if (rule.cities.length && !(c.city && rule.cities.some((x) => norm(c.city!).includes(norm(x))))) return false;
-  if (rule.excludeRejectedOnSite && c.siteStatus === "rejected") return false;
-  if (rule.onlyWithAttachment && !c.hasAttachment) return false;
-  return true;
+/** Why a candidate does NOT match the rule (Persian), or null when it matches. */
+export function ruleReason(rule: SheetRule, c: RuleInput): string | null {
+  const FA: Record<string, string> = { accepted: "قبول", partial: "تایید نسبی", rejected: "رد", pending: "بررسی‌نشده", error: "خطا" };
+  const n = (x: number) => x.toLocaleString("fa-IR", { useGrouping: false });
+  if (rule.decisions.length && !rule.decisions.includes(c.decision as any)) return `وضعیت «${FA[c.decision] ?? c.decision}» در شرط نیست`;
+  if (rule.excludeRejectedOnSite && c.siteStatus === "rejected") return "در جاب‌ویژن رد شده";
+  if (rule.minScore != null && (c.score == null || c.score < rule.minScore)) return `امتیاز ${c.score == null ? "ندارد" : n(c.score)} کمتر از ${n(rule.minScore)}`;
+  if (rule.maxScore != null && (c.score == null || c.score > rule.maxScore)) return `امتیاز بیشتر از ${n(rule.maxScore)}`;
+  if (rule.minYears != null && (c.years == null || c.years < rule.minYears)) return `سابقه ${c.years == null ? "نامشخص" : n(c.years) + " سال"}، کمتر از ${n(rule.minYears)} سال`;
+  if (rule.maxExperienceAlerts != null && c.experienceAlerts > rule.maxExperienceAlerts) return `${n(c.experienceAlerts)} هشدار در سوابق کاری`;
+  if (rule.cities.length && !(c.city && rule.cities.some((x) => norm(c.city!).includes(norm(x))))) return `شهر «${c.city ?? "نامشخص"}» در شرط نیست`;
+  if (rule.onlyWithAttachment && !c.hasAttachment) return "فایل رزومه پیوست نکرده";
+  return null;
 }
+
+export const ruleMatches = (rule: SheetRule, c: RuleInput) => ruleReason(rule, c) === null;
 
 const FA_DEC: Record<string, string> = { accepted: "قبول", partial: "تایید نسبی", rejected: "رد", pending: "بررسی‌نشده" };
 const n = (x: number) => x.toLocaleString("fa-IR", { useGrouping: false });

@@ -55,6 +55,9 @@ const routes: [string, string, H][] = [
     return fileResponse(f.data, f.name, f.name.endsWith(".pdf") ? "application/pdf" : "application/octet-stream");
   }],
   ["POST", "platforms/:src/jobs/:id/reject", (p, b) => svc.rejectOnSite(p.src, p.id, (b?.ids ?? []).map(String))],
+  ["PUT", "platforms/:src/jobs/:id/status-map", (p, b) => svc.saveStatusMap(p.src, p.id, b ?? {})],
+  ["POST", "platforms/:src/jobs/:id/site-status/preview", (p, b) => svc.previewSiteStatuses(p.src, p.id, b?.ids)],
+  ["POST", "platforms/:src/jobs/:id/site-status/apply", (p, b) => svc.applySiteStatuses(p.src, p.id, b?.ids)],
   ["GET", "gsheet", () => svc.getSheetSettings()],
   ["PUT", "gsheet", (_, b) => svc.saveSheetSettings(b ?? {})],
   ["POST", "gsheet/test", (_, b) => svc.testSheet(b ?? {})],

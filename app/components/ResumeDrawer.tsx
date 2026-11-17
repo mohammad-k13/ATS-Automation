@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useRef } from "react";
 import { useApi } from "../lib/cache";
+import { SiteStatusBadge } from "./SiteStatus";
 import { fa, faDate, platformName } from "../lib/api";
 
 const DEC: Record<string, [string, string]> = { accepted: ["ok", "قبول"], partial: ["partial", "تایید نسبی"], rejected: ["rej", "رد"], error: ["warn", "خطا"], pending: ["", "بررسی‌نشده"] };
@@ -48,9 +49,8 @@ export default function ResumeDrawer({ src, id, onClose, onScore, onAsk, onRejec
                 <a className="btn sm" href={`/api/platforms/${src}/applications/${a.id}/file/jobvision`}>⬇ رزومهٔ جاب‌ویژن</a>
                 {a.hasAttachment && <a className="btn sm" href={`/api/platforms/${src}/applications/${a.id}/file/attached`}>⬇ رزومهٔ پیوست</a>}
                 <span className="grow" />
-                {a.siteStatus === "rejected"
-                  ? <span className="badge rej">رد شده در {platformName(src)}</span>
-                  : onReject && <button className="btn sm danger" onClick={() => onReject(a.id)}>رد در {platformName(src)}</button>}
+                <SiteStatusBadge status={a.siteStatus} src={src} />
+                {a.siteStatus !== "rejected" && onReject && <button className="btn sm danger" onClick={() => onReject(a.id)}>رد در {platformName(src)}</button>}
               </div>
 
               {r?.summary && <p style={{ margin: 0 }}>{r.summary}</p>}

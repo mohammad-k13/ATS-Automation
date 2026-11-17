@@ -79,7 +79,7 @@ export class Db {
     this.db.exec(`CREATE TABLE IF NOT EXISTS jobs_meta (
       source TEXT NOT NULL, job_id TEXT NOT NULL, unit TEXT, PRIMARY KEY (source, job_id))`);
     const metaCols = new Set((this.db.prepare("PRAGMA table_info(jobs_meta)").all() as any[]).map((c) => c.name));
-    for (const col of ["title", "description", "ad_text", "ad_fetched_at"]) if (!metaCols.has(col)) this.db.exec(`ALTER TABLE jobs_meta ADD COLUMN ${col} TEXT`);
+    for (const col of ["title", "description", "ad_text", "ad_fetched_at", "site_status_map"]) if (!metaCols.has(col)) this.db.exec(`ALTER TABLE jobs_meta ADD COLUMN ${col} TEXT`);
     this.db.exec(`CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, json TEXT NOT NULL, updated_at TEXT NOT NULL)`);
     this.db.exec(`CREATE TABLE IF NOT EXISTS chat_threads (
       id TEXT PRIMARY KEY, source TEXT NOT NULL, job_id TEXT NOT NULL, title TEXT NOT NULL,
@@ -111,12 +111,12 @@ export class Db {
     this.db.prepare("INSERT INTO kv (key,json,updated_at) VALUES (?,?,?) ON CONFLICT(key) DO UPDATE SET json=excluded.json, updated_at=excluded.updated_at").run(key, JSON.stringify(value), new Date().toISOString());
   }
 
-  getJobMeta(source: string, jobId: string): { unit: string; title: string; description: string; adText: string; adFetchedAt: string | null } {
+  getJobMeta(source: string, jobId: string): { unit: string; title: string; description: string; adText: string; adFetchedAt: string | null; siteStatusMap: string | null } {
     const r = this.db.prepare("SELECT * FROM jobs_meta WHERE source=? AND job_id=?").get(source, jobId) as any;
-    return { unit: r?.unit ?? "", title: r?.title ?? "", description: r?.description ?? "", adText: r?.ad_text ?? "", adFetchedAt: r?.ad_fetched_at ?? null };
+    return { unit: r?.unit ?? "", title: r?.title ?? "", description: r?.description ?? "", adText: r?.ad_text ?? "", adFetchedAt: r?.ad_fetched_at ?? null, siteStatusMap: r?.site_status_map ?? null };
   }
   /** Update some job meta fields (unit, title, description, ad_text, ad_fetched_at). */
-  setJobMeta(source: string, jobId: string, fields: Partial<Record<"unit" | "title" | "description" | "ad_text" | "ad_fetched_at", string>>) {
+  setJobMeta(source: string, jobId: string, fields: Partial<Record<"unit" | "title" | "description" | "ad_text" | "ad_fetched_at" | "site_status_map", string>>) {
     this.db.prepare("INSERT INTO jobs_meta (source,job_id) VALUES (?,?) ON CONFLICT(source,job_id) DO NOTHING").run(source, jobId);
     for (const [k, v] of Object.entries(fields)) this.db.prepare(`UPDATE jobs_meta SET ${k}=? WHERE source=? AND job_id=?`).run(v ?? "", source, jobId);
   }

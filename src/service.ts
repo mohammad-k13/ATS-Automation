@@ -13,7 +13,7 @@ import { aiInfo, getChat, getScorer } from "./ai";
 import { loadCriteria, pickCriteria, tidyCriteria } from "./criteria";
 import { Db, type Row, type ThreadRow } from "./db";
 import { EXPORT_INSTRUCTIONS, extractExports, fieldValue, jalaliDate, type ExportTable } from "./exports";
-import { appsScript, callSheet, describeRule, MAPPING_PROMPT, normKey, RULE_PROMPT, ruleMatches, SHEET_FIELDS, SheetRule } from "./gsheet";
+import { appsScript, callSheet, describeRule, MAPPING_PROMPT, normKey, RULE_PROMPT, ruleReason, SHEET_FIELDS, SheetRule } from "./gsheet";
 import { buildXlsx } from "./xlsx";
 import type { ChatMessage } from "./score";
 import { loadSources, validateSourcesYaml } from "./sources/index";
@@ -226,6 +226,7 @@ export function getJobSettings(src: string, jobId: string) {
     criteriaName: criteria?.name ?? null,
     scheduled: (cfg.jobPostIds ?? []).map(String).includes(String(jobId)),
     unit: db().getUnit(src, jobId),
+    statusMap: getStatusMap(src, jobId),
     description: db().getJobMeta(src, jobId).description,
     adText: db().getJobMeta(src, jobId).adText,
     adFetchedAt: db().getJobMeta(src, jobId).adFetchedAt,
@@ -463,6 +464,7 @@ export async function startScoring(src: string, jobId: string, opts: { ids?: str
     }
   })()
     .catch((e) => (task.error = e instanceof Error ? e.message : String(e)))
+    .then(() => autoApplySiteStatuses(src, jobId, log))
     .then(() => autoSyncSheet(src, jobId, log))
     .finally(() => {
       task.running = false;
@@ -925,19 +927,28 @@ async function sheetPlan(src: string, jobId?: string) {
   if (!c.url || !c.headers.length) throw new UserError("اتصال گوگل شیت هنوز تنظیم نشده (تنظیمات و اتصال‌ها)");
   if (!Object.values(c.mapping).some(Boolean)) throw new UserError("هیچ ستونی به داده‌ای وصل نشده؛ نگاشت ستون‌ها را تنظیم کنید");
   const all = db().report(src, { jobId });
+  // everyone is either added or listed with a reason (only scored people are listed, not pending/errors)
+  const skipped: { name: string; reason: string }[] = [];
+  const listWorthy = (d: string) => d === "accepted" || d === "partial" || c.rule.decisions.includes(d as any);
   const candidates = all.filter((r) => {
     const ex = parse(r.extra_json) ?? {};
-    return !r.gsheet_synced_at && ruleMatches(c.rule, {
+    if (r.gsheet_synced_at) {
+      if (listWorthy(r.decision)) skipped.push({ name: r.name, reason: `قبلاً در ${jalaliDate(r.gsheet_synced_at)} به شیت اضافه شده` });
+      return false;
+    }
+    const why = ruleReason(c.rule, {
       decision: r.decision, score: r.score, years: ex.totalWorkExperienceYears ?? null, experienceAlerts: (ex.experienceAlerts ?? []).length,
       city: ex.city ?? null, siteStatus: r.site_status, hasAttachment: !!(ex.personalCvFileId || r.resume_url),
     });
+    if (why && listWorthy(r.decision)) skipped.push({ name: r.name, reason: why });
+    return !why;
   });
   // people already in the sheet (by the key column)
-  let existing = new Set<string>();
+  let existing = new Map<string, string>(); // key -> who/where
   const keyField = c.keyColumn ? c.mapping[c.keyColumn] : null;
   if (c.keyColumn && keyField) {
     const res = await callSheet<{ values: string[] }>(c.url, { secret: sheetSecret(), action: "keys", sheet: c.sheet, column: c.keyColumn });
-    existing = new Set(res.values.map(normKey).filter(Boolean));
+    existing = new Map(res.values.map((v) => [normKey(v), "شیت"] as [string, string]).filter(([k]) => !!k));
   }
   const today = jalaliDate(new Date().toISOString());
   const value = (field: string | null, r: (typeof all)[number]) =>
@@ -946,10 +957,15 @@ async function sheetPlan(src: string, jobId?: string) {
   const alreadyInSheet: typeof all = [];
   for (const r of candidates) {
     const key = keyField ? normKey(value(keyField, r)) : "";
-    if (key && existing.has(key)) alreadyInSheet.push(r);
-    else {
+    const seen = key ? existing.get(key) : undefined;
+    if (seen === "شیت") {
+      alreadyInSheet.push(r);
+      skipped.push({ name: r.name, reason: `از قبل در شیت هست (همان ${c.keyColumn})` });
+    } else if (seen) {
+      skipped.push({ name: r.name, reason: `تکراری: همان ${c.keyColumn} با «${seen}» (احتمالاً دو بار درخواست داده)` });
+    } else {
       toAdd.push(r);
-      if (key) existing.add(key); // also avoid duplicates inside this batch
+      if (key) existing.set(key, r.name);
     }
   }
   // row numbers continue after the last number found in the sheet's row-number column
@@ -961,13 +977,13 @@ async function sheetPlan(src: string, jobId?: string) {
     nextNo = (nums.length ? Math.max(...nums) : res.values.length) + 1;
   }
   const rows = toAdd.map((r, i) => c.headers.map((h) => (c.mapping[h] === "rowNumber" ? String(nextNo + i) : value(c.mapping[h] ?? null, r))));
-  return { c, toAdd, alreadyInSheet, rows };
+  return { c, toAdd, alreadyInSheet, rows, skipped };
 }
 
 export async function previewSheet(src: string, jobId?: string) {
   try {
     const p = await sheetPlan(src, jobId);
-    return { headers: p.c.headers, rows: p.rows.slice(0, 50), count: p.rows.length, alreadyInSheet: p.alreadyInSheet.length, ruleText: describeRule(p.c.rule) };
+    return { headers: p.c.headers, rows: p.rows.slice(0, 50), count: p.rows.length, alreadyInSheet: p.alreadyInSheet.length, ruleText: describeRule(p.c.rule), skipped: p.skipped };
   } catch (e) {
     if (e instanceof UserError) throw e;
     throw new UserError(e instanceof Error ? e.message : String(e), 502);
@@ -1005,5 +1021,78 @@ export async function autoSyncSheet(src: string, jobId: string, log: (s: string)
     if (r.added) log(`گوگل شیت: ${r.added} ردیف اضافه شد`);
   } catch (e) {
     log(`✖ گوگل شیت: ${e instanceof Error ? e.message : e}`);
+  }
+}
+
+// ---------- Jobvision status per result (per job) ----------
+/** Jobvision application statuses (BaseData/GetListOfApplicationStatuses). */
+export const SITE_STATUSES = { 4: "تایید اولیه", 6: "در حال بررسی", 5: "رد شده" } as const;
+type SiteCode = 4 | 5 | 6;
+const SITE_STATUS_NAME: Record<SiteCode, string> = { 4: "approved", 6: "checking", 5: "rejected" };
+export const SITE_STATUS_FA: Record<string, string> = { approved: "تایید اولیه", checking: "در حال بررسی", rejected: "رد شده" };
+
+export const StatusMap = z.object({
+  accepted: z.union([z.literal(4), z.literal(5), z.literal(6), z.null()]).default(4),
+  partial: z.union([z.literal(4), z.literal(5), z.literal(6), z.null()]).default(6),
+  rejected: z.union([z.literal(4), z.literal(5), z.literal(6), z.null()]).default(5),
+  auto: z.boolean().default(false),
+});
+export type StatusMap = z.infer<typeof StatusMap>;
+
+export function getStatusMap(src: string, jobId: string): StatusMap {
+  const raw = db().getJobMeta(src, jobId).siteStatusMap;
+  return StatusMap.parse(raw ? JSON.parse(raw) : {});
+}
+export function saveStatusMap(src: string, jobId: string, input: unknown) {
+  const m = StatusMap.parse(input);
+  db().setJobMeta(src, jobId, { site_status_map: JSON.stringify(m) });
+  return m;
+}
+
+/** What would change on Jobvision: people whose site status differs from what the map says. */
+function statusPlan(src: string, jobId: string, ids?: string[]) {
+  const map = getStatusMap(src, jobId);
+  const groups = new Map<SiteCode, Row[]>();
+  for (const r of db().listByJob(src, jobId)) {
+    if (ids?.length && !ids.includes(r.id)) continue;
+    const code = (map as any)[r.decision] as SiteCode | null | undefined;
+    if (!code) continue; // pending / error / "don't change"
+    if (r.site_status === SITE_STATUS_NAME[code]) continue; // already set
+    groups.set(code, [...(groups.get(code) ?? []), r]);
+  }
+  return { map, groups };
+}
+
+export function previewSiteStatuses(src: string, jobId: string, ids?: string[]) {
+  const { groups } = statusPlan(src, jobId, ids);
+  return [...groups.entries()].map(([code, rows]) => ({ code, label: SITE_STATUSES[code], count: rows.length, names: rows.slice(0, 10).map((r) => r.name) }));
+}
+
+/** Set the Jobvision status of everyone (or the given ids) according to the job's map. */
+export async function applySiteStatuses(src: string, jobId: string, ids?: string[]) {
+  await needToken(src);
+  const { groups } = statusPlan(src, jobId, ids);
+  const s = jobvision(src);
+  const done: Record<string, number> = {};
+  for (const [code, rows] of groups) {
+    for (let i = 0; i < rows.length; i += 20) {
+      const batch = rows.slice(i, i + 20);
+      await s.changeStatus(jobId, batch.map((r) => ({ id: r.id, aiScore: parse(r.extra_json)?.jobvisionMatchScore ?? null })), code);
+      db().setSiteStatus(src, batch.map((r) => r.id), SITE_STATUS_NAME[code]);
+    }
+    done[SITE_STATUSES[code]] = rows.length;
+  }
+  return { done };
+}
+
+/** After a scoring run, when the job's map has auto on. Never throws. */
+export async function autoApplySiteStatuses(src: string, jobId: string, log: (s: string) => void) {
+  if (!getStatusMap(src, jobId).auto) return;
+  try {
+    const { done } = await applySiteStatuses(src, jobId);
+    const parts = Object.entries(done).map(([k, v]) => `${v} نفر «${k}»`);
+    if (parts.length) log(`جاب‌ویژن: ${parts.join("، ")}`);
+  } catch (e) {
+    log(`✖ تغییر وضعیت در جاب‌ویژن: ${e instanceof Error ? e.message : e}`);
   }
 }
