@@ -98,6 +98,25 @@ export default function GoogleSheet() {
         )}
       </div>
 
+      {/* steps 2–4 preview until connected, so it is clear what comes next */}
+      {!connected && (
+        <div className="stack" style={{ gap: 12, opacity: 0.55 }}>
+          <div>
+            <h3>۲. ستون‌های شیت</h3>
+            <div className="small muted">هوش مصنوعی ستون‌های شیت شما را می‌خواند و پیشنهاد می‌دهد در هر ستون چه نوشته شود (نام، تلفن، امتیاز…).</div>
+          </div>
+          <div>
+            <h3>۳. شرط اضافه شدن به شیت</h3>
+            <div className="small muted">به زبان ساده بنویسید چه کسانی اضافه شوند؛ مثلاً «قبول و تایید نسبی با امتیاز بالای ۶۰».</div>
+          </div>
+          <div>
+            <h3>۴. ارسال</h3>
+            <div className="small muted">پیش‌نمایش، افزودن به شیت، و ارسال خودکار بعد از هر امتیازدهی.</div>
+          </div>
+          <div className="notice" style={{ opacity: 1 }}>این مراحل بعد از «آزمایش اتصال» موفق فعال می‌شوند. اول کد را در شیت اضافه کنید («راهنمای اتصال» بالا).</div>
+        </div>
+      )}
+
       {/* 2. columns */}
       {connected && (
         <div className="stack" style={{ gap: 10 }}>
