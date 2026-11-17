@@ -47,6 +47,14 @@ const routes: [string, string, H][] = [
   ["GET", "platforms/:src/applications/:id", (p) => svc.getApplication(p.src, p.id)],
   ["PUT", "platforms/:src/jobs/:id/unit", (p, b) => svc.setJobUnit(p.src, p.id, String(b?.unit ?? ""))],
   ["GET", "platforms/:src/report", (p, _b, q) => svc.report(p.src, { jobId: q.get("job") ?? undefined, status: q.get("status") ?? undefined, ids: q.get("ids") ?? undefined })],
+  ["POST", "platforms/:src/jobs/:id/zip", (p, b) => svc.startZip(p.src, p.id, { ids: b?.ids, decisions: b?.decisions })],
+  ["GET", "platforms/:src/jobs/:id/zip", (p) => svc.getZipTask(p.src, p.id)],
+  ["GET", "files/zip/:token", async (p, _b, q) => fileResponse(await svc.zipFile(p.token), q.get("name") || "resumes.zip", "application/zip")],
+  ["GET", "platforms/:src/applications/:id/file/:kind", async (p) => {
+    const f = await svc.candidateFile(p.src, p.id, p.kind === "attached" ? "attached" : "jobvision");
+    return fileResponse(f.data, f.name, f.name.endsWith(".pdf") ? "application/pdf" : "application/octet-stream");
+  }],
+  ["POST", "platforms/:src/jobs/:id/reject", (p, b) => svc.rejectOnSite(p.src, p.id, (b?.ids ?? []).map(String))],
   ["GET", "integrations", () => svc.getIntegrations()],
   ["PUT", "integrations/ai", (_, b) => svc.saveAiSettings(b ?? {})],
   ["POST", "integrations/ai/models", (_, b) => svc.listAiModels(b ?? {})],
@@ -54,6 +62,14 @@ const routes: [string, string, H][] = [
   ["PUT", "integrations/telegram", (_, b) => svc.saveTelegramSettings(b ?? {})],
   ["POST", "integrations/telegram/test", () => svc.testTelegram()],
 ];
+
+/** Binary download with a UTF-8 file name. */
+function fileResponse(data: Uint8Array, name: string, type: string) {
+  const ascii = name.replace(/[^\x20-\x7e]+/g, "_").replace(/"/g, "");
+  return new Response(new Uint8Array(data), {
+    headers: { "content-type": type, "content-disposition": `attachment; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(name)}` },
+  });
+}
 
 function match(pattern: string, parts: string[]) {
   const pp = pattern.split("/");
@@ -94,7 +110,10 @@ async function handle(req: Request, ctx: Ctx) {
     const body = req.method === "GET" || req.method === "DELETE" ? null : await req.json().catch(() => ({}));
     for (const [m, pat, h] of routes) {
       const p = m === req.method ? match(pat, path) : null;
-      if (p) return Response.json((await h(p, body, new URL(req.url).searchParams)) ?? null);
+      if (p) {
+        const out = await h(p, body, new URL(req.url).searchParams);
+        return out instanceof Response ? out : Response.json(out ?? null);
+      }
     }
     return Response.json({ error: "not found" }, { status: 404 });
   } catch (e) {

@@ -36,7 +36,7 @@ export const JobvisionSourceConfig = z.object({
 });
 export type JobvisionSourceConfig = z.infer<typeof JobvisionSourceConfig>;
 
-const Envelope = z.object({ isSuccess: z.boolean(), message: z.string().nullable().optional(), data: z.any() });
+const Envelope = z.object({ isSuccess: z.boolean(), message: z.string().nullable().optional(), data: z.any().optional() });
 
 /** Decode JWT exp without verifying (just to warn before calling). */
 export function jwtExpiry(token: string): Date | null {
@@ -140,6 +140,20 @@ export function extractJobAd(html: string): string {
   const meta = html.match(/<meta[^>]+(?:name|property)=["'](?:og:)?description["'][^>]+content=["']([^"']+)/i)?.[1];
   if (meta && meta.length > 120) return stripHtml(meta);
   throw new Error("متن آگهی در صفحهٔ عمومی پیدا نشد");
+}
+
+const fileAuthMemo: { way?: string } = ((globalThis as any).__atsFileAuth ??= {});
+const fileIdOf = (url?: string | null) => (url ? new URL(url, "https://x").searchParams.get("FileId") : null);
+const isPdf = (d: Uint8Array) => d[0] === 0x25 && d[1] === 0x50 && d[2] === 0x44 && d[3] === 0x46;
+function extOf(d: Uint8Array, ct: string, cd: string | null) {
+  const named = cd?.match(/filename\*?=(?:UTF-8'')?"?[^";]*?(\.[a-z0-9]{2,5})"?(?:;|$)/i)?.[1];
+  if (named) return named.toLowerCase();
+  if (isPdf(d) || ct.includes("pdf")) return ".pdf";
+  if (d[0] === 0x50 && d[1] === 0x4b) return ".docx";
+  if (d[0] === 0xff && d[1] === 0xd8) return ".jpg";
+  if (d[0] === 0x89 && d[1] === 0x50) return ".png";
+  if (ct.includes("msword")) return ".doc";
+  return ".pdf";
 }
 
 /** Work history from GetApplicationDetails2 in a neutral shape for the experience checks. */
@@ -279,6 +293,8 @@ export class JobvisionSource implements Source {
       phone: cv.contactData?.mobileNumber || cv.contactData?.phoneNumber || undefined,
       extra: {
         resumeType: files.hasPersonalCv ? "فایل رزومهٔ شخصی" : "پروفایل جاب‌ویژن",
+        cvId: cv.cvId ?? cv.id ?? s.userId ?? null,
+        personalCvFileId: files.hasPersonalCv ? fileIdOf(files.personalCvPdfUrl) : null,
         jobvisionMatchScore: s.matchingScore ?? null,
         totalWorkExperienceYears: cv.totalWorkExperience ?? null,
         city: t(b.residenceCity) || null,
@@ -298,6 +314,79 @@ export class JobvisionSource implements Source {
     // rule-based work-history checks: shown as alerts and given to the AI scorer
     app.extra = { ...(app.extra ?? {}), experienceAlerts: analyzeExperience(workItems(d)) };
     return cvToText(d);
+  }
+
+  // ---------------------------------------------------------------- files & status (dashboard)
+  private v2Base() {
+    return this.cfg.apiBase.replace(/\/v1\.0\/?$/, "/v2.0");
+  }
+
+  /** The Jobvision-generated PDF of the candidate's profile (what the panel's «دانلود رزومه» gives). */
+  async downloadJobvisionCv(app: Application): Promise<ResumeFile> {
+    this.checkToken();
+    let cvId = (app.extra?.cvId as number | undefined) ?? undefined;
+    if (!cvId) {
+      const d = await this.api("GET", `/JobPostApplication/GetApplicationDetails2?applicationId=${app.id}&cvlang=1`);
+      cvId = d?.cvDetail?.cvId;
+    }
+    if (!cvId) throw new Error("شناسهٔ رزومه (cvId) پیدا نشد");
+    const res = await httpFetch(
+      `${this.v2Base()}/Cv/DownloadJvCV_v2`,
+      {
+        method: "POST",
+        headers: { Authorization: `Bearer ${this.token}`, "Content-Type": "application/json", Accept: "application/json, text/plain, */*", Origin: this.cfg.panelBase, Referer: `${this.cfg.panelBase}/` },
+        body: JSON.stringify({ cvId, jobPostId: Number(app.jobId), language: 2, medium: 3 }),
+      },
+      this.cfg.proxy,
+      120_000,
+    );
+    if (res.status === 401 || res.status === 403) throw new AuthError(`${this.name}: ${res.status} downloading Jobvision CV`);
+    if (!res.ok) throw new Error(`دانلود رزومهٔ جاب‌ویژن ناموفق بود (HTTP ${res.status})`);
+    const data = new Uint8Array(await res.arrayBuffer());
+    if (!isPdf(data)) throw new Error("پاسخ جاب‌ویژن فایل PDF نبود");
+    return { data, filename: "رزومه جاب‌ویژن.pdf", contentType: "application/pdf" };
+  }
+
+  /**
+   * The file the candidate uploaded. The panel only gives a plain link, so try the ways it may be
+   * authorised (none / bearer header / token in the link) and remember the one that works.
+   */
+  async downloadAttachedCv(app: Application): Promise<ResumeFile | null> {
+    const fileId = (app.extra?.personalCvFileId as number | string | undefined) ?? fileIdOf(app.resumeUrl);
+    if (!fileId) return null;
+    const url = `${this.cfg.fileBase}/Files/Download?FileId=${encodeURIComponent(String(fileId))}`;
+    const ways: Record<string, () => Promise<Response>> = {
+      bearer: () => httpFetch(url, { headers: { Authorization: `Bearer ${this.token}`, Referer: `${this.cfg.panelBase}/`, Origin: this.cfg.panelBase } }, this.cfg.proxy, 120_000) as any,
+      none: () => httpFetch(url, { headers: { Referer: `${this.cfg.panelBase}/` } }, this.cfg.proxy, 120_000) as any,
+      query: () => httpFetch(`${url}&access_token=${encodeURIComponent(this.token)}`, { headers: { Referer: `${this.cfg.panelBase}/` } }, this.cfg.proxy, 120_000) as any,
+    };
+    const order = [fileAuthMemo.way, "bearer", "none", "query"].filter((w, i, a): w is string => !!w && a.indexOf(w) === i);
+    const tried: string[] = [];
+    for (const way of order) {
+      const res = await ways[way]();
+      const data = new Uint8Array(await res.arrayBuffer());
+      const ct = (res.headers.get("content-type") ?? "").toLowerCase();
+      const looksLikeFile = res.ok && data.length > 200 && !ct.includes("json") && !ct.includes("text/html");
+      if (looksLikeFile) {
+        fileAuthMemo.way = way;
+        return { data, filename: `رزومه پیوست${extOf(data, ct, res.headers.get("content-disposition"))}`, contentType: ct || "application/octet-stream" };
+      }
+      tried.push(`${way}:${res.status}`);
+    }
+    throw new Error(`دانلود فایل پیوست ناموفق بود (${tried.join("، ")})`);
+  }
+
+  /** Change the application status on Jobvision: 5 = رد شده، 4 = تایید اولیه، 6 = در حال بررسی */
+  async changeStatus(jobPostId: string, apps: { id: string; aiScore?: number | null }[], newStatus: 4 | 5 | 6) {
+    this.checkToken();
+    await this.api("POST", "/JobPostApplication/ChangeStatus", {
+      jobPostId: Number(jobPostId),
+      listOfApplicationIds: apps.map((a) => Number(a.id)),
+      listOfApplicationIdsWithIndexAndScore: apps.map((a, index) => ({ applicationId: Number(a.id), aIScore: a.aiScore ?? 0, index })),
+      newStatus,
+      didActionOnCard: false,
+      sortType: 0,
+    });
   }
 
   async downloadResume(app: Application): Promise<ResumeFile | null> {

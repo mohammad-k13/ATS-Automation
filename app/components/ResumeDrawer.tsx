@@ -5,7 +5,7 @@ import { fa, faDate, platformName } from "../lib/api";
 
 const DEC: Record<string, [string, string]> = { accepted: ["ok", "قبول"], partial: ["partial", "تایید نسبی"], rejected: ["rej", "رد"], error: ["warn", "خطا"], pending: ["", "بررسی‌نشده"] };
 
-export default function ResumeDrawer({ src, id, onClose, onScore, onAsk }: { src: string; id: string; onClose: () => void; onScore: (id: string) => void; onAsk: (text: string, id: string) => void }) {
+export default function ResumeDrawer({ src, id, onClose, onScore, onAsk, onReject }: { src: string; id: string; onClose: () => void; onScore: (id: string) => void; onAsk: (text: string, id: string) => void; onReject?: (id: string) => Promise<void> | void }) {
   const q = useApi<any>(`platforms/${src}/applications/${id}`);
   const a = q.data ?? null;
   const err = q.error?.message ?? "";
@@ -43,6 +43,14 @@ export default function ResumeDrawer({ src, id, onClose, onScore, onAsk }: { src
                 <button className="btn sm primary" onClick={() => { onScore(a.id); setTimeout(() => q.mutate(), 4000); }}>{a.decision === "pending" ? "امتیازدهی این رزومه" : "امتیازدهی مجدد"}</button>
                 <button className="btn sm" onClick={() => onAsk(`چرا ${a.name} ${a.decision === "accepted" ? "پذیرفته" : a.decision === "partial" ? "تایید نسبی" : a.decision === "rejected" ? "رد" : "بررسی"} شده؟ نقاط قوت و ضعفش برای این شغل چیست؟`, a.id)}>پرسیدن از دستیار</button>
                 {a.profileUrl && <a className="btn sm" href={a.profileUrl} target="_blank" rel="noreferrer">مشاهده در {platformName(src)} ↗</a>}
+              </div>
+              <div className="row wrap">
+                <a className="btn sm" href={`/api/platforms/${src}/applications/${a.id}/file/jobvision`}>⬇ رزومهٔ جاب‌ویژن</a>
+                {a.hasAttachment && <a className="btn sm" href={`/api/platforms/${src}/applications/${a.id}/file/attached`}>⬇ رزومهٔ پیوست</a>}
+                <span className="grow" />
+                {a.siteStatus === "rejected"
+                  ? <span className="badge rej">رد شده در {platformName(src)}</span>
+                  : onReject && <button className="btn sm danger" onClick={() => onReject(a.id)}>رد در {platformName(src)}</button>}
               </div>
 
               {r?.summary && <p style={{ margin: 0 }}>{r.summary}</p>}

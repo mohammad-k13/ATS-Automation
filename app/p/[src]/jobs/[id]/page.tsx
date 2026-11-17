@@ -11,7 +11,9 @@ import { refresh as refreshCache, Updating, useApi } from "../../../../lib/cache
 interface App {
   id: string; name: string; job: string | null; decision: "accepted" | "partial" | "rejected" | "error" | "pending";
   score: number | null; error: string | null; result: any; extra: any; profileUrl: string | null; appliedAt: string | null; processedAt: string | null;
+  siteStatus?: string | null; hasAttachment?: boolean;
 }
+interface ZipTask { running: boolean; done: number; total: number; current: string | null; token?: string; filename?: string; errors: string[]; error?: string }
 interface Task { running: boolean; done: number; total: number; current: string | null; errors: number; error?: string; log: string[]; cancelRequested?: boolean; cancelled?: boolean }
 
 const DEC: Record<App["decision"], [string, string]> = { accepted: ["ok", "قبول"], partial: ["partial", "تایید نسبی"], rejected: ["rej", "رد"], error: ["warn", "خطا"], pending: ["", "بررسی‌نشده"] };
@@ -58,6 +60,33 @@ function JobPage() {
   useEffect(() => {
     if (apps && !apps.length && !triedRefresh.current) { triedRefresh.current = true; pullFromSite(); }
   }, [apps, pullFromSite]);
+
+  // ---- ZIP downloads
+  const zipQ = useApi<ZipTask | null>(`${base}/zip`, { refreshInterval: (t) => (t?.running ? 1500 : 0) });
+  const zip = zipQ.data ?? null;
+  const zipWasRunning = useRef(false);
+  useEffect(() => {
+    // when the ZIP is ready, download it once
+    if (zipWasRunning.current && zip && !zip.running && zip.token) {
+      location.href = `/api/files/zip/${zip.token}?name=${encodeURIComponent(zip.filename ?? "resumes.zip")}`;
+    }
+    zipWasRunning.current = !!zip?.running;
+  }, [zip]);
+  const startZip = async (ids?: string[]) => {
+    setErr("");
+    try { await zipQ.mutate(await api<ZipTask>(`${base}/zip`, { body: ids ? { ids } : { decisions: ["accepted", "partial"] } }), { revalidate: false }); }
+    catch (e: any) { setErr(e.message); }
+  };
+
+  // ---- reject on Jobvision
+  const rejectOnSite = async (ids: string[]) => {
+    const n = ids.length;
+    if (!confirm(`وضعیت ${n.toLocaleString("fa-IR")} نفر در خود ${platformName(src)} به «رد شده» تغییر می‌کند.\nممکن است جاب‌ویژن این را به کارجو اطلاع دهد. ادامه می‌دهید؟`)) return;
+    setBusy("reject"); setErr("");
+    try { await api(`${base}/reject`, { body: { ids } }); await appsQ.mutate(); setSel(new Set()); }
+    catch (e: any) { setErr(e.message); }
+    finally { setBusy(""); }
+  };
 
   const cancel = async () => {
     try { await taskQ.mutate(await api<Task>(`${base}/score/cancel`, { body: {} }), { revalidate: false }); }
@@ -142,6 +171,14 @@ function JobPage() {
                   </button>
                   <button className="btn sm" disabled={running || !scored} onClick={() => confirm("همهٔ رزومه‌ها دوباره امتیاز بگیرند؟") && score({ rescore: true })}>امتیازدهی مجدد همه</button>
                   <span className="grow" />
+                  {selIds.length > 0 ? (
+                    <>
+                      <button className="btn sm" disabled={!!zip?.running} onClick={() => startZip(selIds)}>⬇ دانلود انتخاب‌شده‌ها ({fa(selIds.length)})</button>
+                      <button className="btn sm danger" disabled={busy === "reject"} onClick={() => rejectOnSite(selIds)}>{busy === "reject" ? "در حال رد…" : `رد در ${platformName(src)} (${fa(selIds.length)})`}</button>
+                    </>
+                  ) : (
+                    <button className="btn sm" disabled={!!zip?.running || !(counts.accepted + counts.partial)} onClick={() => startZip()}>⬇ دانلود قبول و نسبی ({fa(counts.accepted + counts.partial)})</button>
+                  )}
                   <Link className="btn sm" href={`/report?${new URLSearchParams({ src, job: id, ...(selIds.length ? { ids: selIds.join(",") } : filter !== "all" ? { status: filter } : {}) })}`}>
                     گزارش {selIds.length ? `انتخاب‌شده‌ها (${fa(selIds.length)})` : filter !== "all" ? `«${FILTERS.find(([f]) => f === filter)?.[1]}»` : ""}
                   </Link>
@@ -161,6 +198,21 @@ function JobPage() {
                   </div>
                 )}
                 {!running && task?.error && <div className="notice bad" style={{ margin: 12 }}>{task.error}</div>}
+                {zip?.running && (
+                  <div style={{ padding: "10px 14px", borderBottom: "1px solid var(--line)" }}>
+                    <div className="row between small" style={{ marginBottom: 6 }}>
+                      <span>در حال آماده‌سازی فایل فشرده {zip.current ? `«${zip.current}»` : ""}</span>
+                      <span className="muted">{fa(zip.done)} از {fa(zip.total)}</span>
+                    </div>
+                    <div className="progress"><div style={{ width: `${pct(zip.done, zip.total)}%` }} /></div>
+                  </div>
+                )}
+                {zip && !zip.running && (zip.error || zip.errors.length > 0) && (
+                  <div className={`notice ${zip.error ? "bad" : ""}`} style={{ margin: 12 }}>
+                    {zip.error ?? `فایل فشرده ساخته شد، اما برای ${fa(zip.errors.length)} مورد خطا بود:`}
+                    {zip.errors.length > 0 && <ul style={{ margin: "6px 0 0", paddingInlineStart: 18 }}>{zip.errors.slice(0, 8).map((e) => <li key={e}>{e}</li>)}</ul>}
+                  </div>
+                )}
                 {!running && task?.cancelled && !task.error && (
                   <div className="notice" style={{ margin: 12 }}>
                     امتیازدهی متوقف شد ({fa(task.done)} از {fa(task.total)} انجام شد). بعد از تغییر تنظیمات، «امتیازدهی مجدد همه» را بزنید.
@@ -194,7 +246,7 @@ function JobPage() {
                             <td onClick={(e) => e.stopPropagation()}><input type="checkbox" checked={sel.has(a.id)} onChange={() => toggle(a.id)} /></td>
                             <td>{a.score != null && a.decision !== "pending" ? <span className={`score ${a.decision === "accepted" ? "ok" : a.decision === "partial" ? "partial" : "rej"}`}>{fa(a.score)}</span> : <span className="faint">—</span>}</td>
                             <td>
-                              <div className="row wrap"><b>{a.name}</b><span className={`badge ${cls}`}>{label}</span>{a.extra?.experienceAlerts?.length > 0 && <span className="alert-count" title={a.extra.experienceAlerts.join("\n")}>⚠ {fa(a.extra.experienceAlerts.length)}</span>}</div>
+                              <div className="row wrap"><b>{a.name}</b><span className={`badge ${cls}`}>{label}</span>{a.extra?.experienceAlerts?.length > 0 && <span className="alert-count" title={a.extra.experienceAlerts.join("\n")}>⚠ {fa(a.extra.experienceAlerts.length)}</span>}{a.siteStatus === "rejected" && <span className="badge rej">رد شده در {platformName(src)}</span>}</div>
                               <div className="small muted">{[a.extra?.lastJob, a.extra?.totalWorkExperienceYears != null ? `${fa(a.extra.totalWorkExperienceYears)} سال سابقه` : null].filter(Boolean).join(" · ")}</div>
                             </td>
                             <td className="sum">
@@ -223,7 +275,8 @@ function JobPage() {
       {open && (
         <ResumeDrawer src={src} id={open} onClose={() => setOpen(null)}
           onScore={(aid) => { score({ ids: [aid], rescore: true }); }}
-          onAsk={(text, aid) => { setOpen(null); setAsk({ text, id: aid }); }} />
+          onAsk={(text, aid) => { setOpen(null); setAsk({ text, id: aid }); }}
+          onReject={async (aid) => { await rejectOnSite([aid]); refreshCache(`platforms/${src}/applications/${aid}`); }} />
       )}
     </>
   );

@@ -20,6 +20,8 @@ export interface Row {
   resume_url: string | null;
   applied_at: string | null;
   phone: string | null;
+  site_status: string | null;
+  site_status_at: string | null;
   attempts: number;
   notified: number;
   processed_at: string;
@@ -55,6 +57,8 @@ const EXTRA_COLUMNS: Record<string, string> = {
   resume_url: "TEXT",
   applied_at: "TEXT",
   phone: "TEXT",
+  site_status: "TEXT", // status we set on the job site, e.g. "rejected"
+  site_status_at: "TEXT",
 };
 
 export class Db {
@@ -113,6 +117,12 @@ export class Db {
   setJobMeta(source: string, jobId: string, fields: Partial<Record<"unit" | "title" | "description" | "ad_text" | "ad_fetched_at", string>>) {
     this.db.prepare("INSERT INTO jobs_meta (source,job_id) VALUES (?,?) ON CONFLICT(source,job_id) DO NOTHING").run(source, jobId);
     for (const [k, v] of Object.entries(fields)) this.db.prepare(`UPDATE jobs_meta SET ${k}=? WHERE source=? AND job_id=?`).run(v ?? "", source, jobId);
+  }
+
+  setSiteStatus(source: string, ids: string[], status: string) {
+    const at = new Date().toISOString();
+    const st = this.db.prepare("UPDATE applications SET site_status=?, site_status_at=? WHERE source=? AND id=?");
+    for (const id of ids) st.run(status, at, source, id);
   }
 
   getUnit(source: string, jobId: string): string {
