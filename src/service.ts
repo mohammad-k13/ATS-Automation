@@ -20,8 +20,9 @@ import { buildXlsx } from "./xlsx";
 import type { ChatMessage } from "./score";
 import { loadSources, validateSourcesYaml } from "./sources/index";
 import { AuthError } from "./sources/http-source";
-import { JobvisionSource, type JobPost } from "./sources/jobvision-source";
-import { credentials, ensureToken, hasCredentials, loginAndSave, saveCredentials, tokenInfo, tokenKey, writeEnv } from "./auth/token";
+import { fileAuthMemo, JobvisionSource, type JobPost } from "./sources/jobvision-source";
+import { diagnoseAttachment } from "./auth/jobvision-diagnose";
+import { credentials, ensureToken, hasCredentials, loginAndSave, saveCookies, saveCredentials, tokenInfo, tokenKey, writeEnv } from "./auth/token";
 export { tokenInfo };
 import { decisionOf, defaultPartial, type Application, type Criteria, type Source } from "./types";
 
@@ -834,6 +835,55 @@ export async function candidateFile(src: string, id: string, kind: "jobvision" |
   const f = files.find((x) => x.name.startsWith(kind === "jobvision" ? "رزومه جاب‌ویژن" : "رزومه پیوست"));
   if (!f) throw new UserError(errors.find((e) => e.startsWith(kind === "jobvision" ? "رزومهٔ جاب‌ویژن" : "فایل پیوست")) ?? "این کارجو فایل پیوست ندارد", 404);
   return { name: `${safeName(r.name)} - ${f.name}`, data: f.data };
+}
+
+/**
+ * Fix for "attached resume gives 401": open the panel in a hidden browser on this server, click the
+ * download icon like a person would, record what the browser sends (names only), keep the login
+ * cookies, and retry our own download with them. Returns a report that is safe to share.
+ */
+export async function diagnoseAttachmentDownload(src: string) {
+  await needToken(src);
+  const s = jobvision(src);
+  const row = db().list(5000).find((r) => r.source === src && parse(r.extra_json)?.personalCvFileId);
+  if (!row) throw new UserError("هیچ کارجویی با فایل پیوست در پایگاه داده نیست؛ اول رزومه‌ها را دریافت کنید.");
+  const app = rowApp(src, row);
+  const links = s.attachmentLinks(app);
+  const log: string[] = [];
+  const { email, password } = credentials(src);
+  let d;
+  try {
+    d = await diagnoseAttachment({
+      email, password, token: process.env[tokenKey(src)] ?? "", panelBase: links.panelBase,
+      profileUrl: links.profileUrl, fileUrl: links.fileUrl!, log: (l) => log.push(l),
+    });
+  } catch (e) {
+    throw new UserError(`اجرای مرورگر ناموفق بود: ${e instanceof Error ? e.message : e}\n${log.join("\n")}`, 502);
+  }
+  saveCookies(src, d.cookies);
+  fileAuthMemo.way = undefined;
+  let retry: string;
+  let fixed = false;
+  try {
+    const f = await jobvision(src).downloadAttachedCv(app);
+    fixed = !!f;
+    retry = f ? `موفق ✔ (${f.data.length.toLocaleString("en")} بایت، روش: ${fileAuthMemo.way})` : "فایلی برنگشت";
+  } catch (e) {
+    retry = `ناموفق: ${e instanceof Error ? e.message : e}`;
+  }
+  const report = [
+    `ATS attachment diagnosis — ${new Date().toISOString()}`,
+    `candidate: ${row.id}  job: ${row.job_id}`,
+    `login: ${d.loggedInWith}  profile opened: ${d.profileOpened}  icon clicked: ${d.clicked}`,
+    `direct tab open: status=${d.direct.status} type=${d.direct.contentType}`,
+    `cookies saved: ${d.cookieNames.join(", ") || "none"}`,
+    `retry with our downloader: ${retry}`,
+    `file-related requests (${d.requests.length}):`,
+    ...d.requests.slice(0, 30).map((r) => `  ${r.method} ${r.url}\n    status=${r.status} type=${r.contentType} bytes=${r.bytes}\n    headers: ${r.headers.join(", ")}\n    cookies: ${r.cookies.join(", ") || "-"}`),
+    "log:",
+    ...log.map((l) => `  ${l}`),
+  ].join("\n");
+  return { fixed, report };
 }
 
 /** Reject on the job site itself (Jobvision status 5). */

@@ -1,6 +1,6 @@
 import { jwtExpiry } from "../sources/jobvision-source";
 import { saveSetting } from "../settings-store";
-import { jobvisionLogin } from "./jobvision-login";
+import { loginInBrowser, type SavedCookie } from "./jobvision-login";
 
 const env = process.env;
 export const tokenKey = (src: string) => `${src.toUpperCase()}_TOKEN`;
@@ -38,8 +38,9 @@ export async function loginAndSave(src: string, opts: { show?: boolean; log?: (s
   const p = (async () => {
     const { email, password } = credentials(src);
     if (src !== "jobvision" && !src.startsWith("jobvision")) throw new Error(`ورود خودکار فقط برای جاب‌ویژن پیاده‌سازی شده`);
-    const token = await jobvisionLogin({ email, password, show: opts.show, log: opts.log });
+    const { token, cookies } = await loginInBrowser({ email, password, show: opts.show, log: opts.log });
     writeEnv(tokenKey(src), token);
+    saveCookies(src, cookies);
     return token;
   })().finally(() => inFlight().delete(src));
   inFlight().set(src, p);
@@ -52,4 +53,28 @@ export async function ensureToken(src: string, opts: { force?: boolean; log?: (s
   if (!hasCredentials(src)) return tokenInfo(src).valid;
   await loginAndSave(src, { log: opts.log });
   return true;
+}
+
+const cookieKey = (src: string) => `${src.toUpperCase()}_COOKIES`;
+/** Cookies from the last browser login (stored as JSON in settings.json). */
+export function savedCookies(src: string): SavedCookie[] {
+  try {
+    return JSON.parse(env[cookieKey(src)] || "[]");
+  } catch {
+    return [];
+  }
+}
+export function saveCookies(src: string, cookies: SavedCookie[]) {
+  if (cookies.length) writeEnv(cookieKey(src), JSON.stringify(cookies));
+}
+/** Cookie header for a URL, like a browser would send it. */
+export function cookieHeader(src: string, url: string): string {
+  const host = new URL(url).hostname;
+  return savedCookies(src)
+    .filter((c) => {
+      const d = c.domain.replace(/^\./, "");
+      return host === d || host.endsWith(`.${d}`);
+    })
+    .map((c) => `${c.name}=${c.value}`)
+    .join("; ");
 }

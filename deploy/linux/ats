@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # ats — manage the ATS dashboard on a Linux server.
 #   ats status | logs [omniroute] | start | stop | restart | update [--force] | rollback
-#   ats passwd [user] | login jobvision | config | version | update-omniroute
+#   ats passwd [user] | login jobvision | diagnose | config | version | update-omniroute
 set -euo pipefail
 
 CONF=${ATS_CONF:-/etc/ats.conf}
@@ -137,6 +137,7 @@ case "${1:-status}" in
   rollback) cmd_rollback ;;
   passwd) need_root passwd; run_cli passwd "${2:-admin}"; $SYSTEMCTL restart ats; ok "login updated" ;;
   login) shift; run_cli login "$@" ;;
+  diagnose) shift; run_cli diagnose "$@" ;;
   config) need_root config; ${EDITOR:-nano} "$DATA/.env"; $SYSTEMCTL restart ats ;;
   version) current_rev ;;
   update-omniroute)

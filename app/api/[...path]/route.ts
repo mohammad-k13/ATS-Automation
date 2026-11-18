@@ -26,6 +26,7 @@ const routes: [string, string, H][] = [
   ["POST", "platforms/:src/token", (p, b) => svc.setToken(p.src, String(b?.token ?? ""))],
   ["PUT", "platforms/:src/credentials", (p, b) => svc.setCredentials(p.src, String(b?.email ?? ""), b?.password ? String(b.password) : undefined)],
   ["POST", "platforms/:src/login", (p, b) => svc.loginNow(p.src, !!b?.show)],
+  ["POST", "platforms/:src/diagnose/attachment", (p) => svc.diagnoseAttachmentDownload(p.src)],
   ["GET", "platforms/:src/jobs", (p, _b, q) => svc.listJobs(p.src, q.get("fresh") === "1")],
   ["GET", "platforms/:src/jobs/:id/settings", (p) => svc.getJobSettings(p.src, p.id)],
   ["PUT", "platforms/:src/jobs/:id/criteria", (p, b) => svc.saveJobCriteria(p.src, p.id, b?.criteria, b?.jobTitle)],

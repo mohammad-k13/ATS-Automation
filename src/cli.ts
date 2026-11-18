@@ -153,6 +153,15 @@ async function main() {
       break;
     }
 
+    case "diagnose": {
+      // npm run ats -- diagnose [jobvision]  — find out how attached resumes download, and fix it
+      const { diagnoseAttachmentDownload } = await import("./service");
+      const r = await diagnoseAttachmentDownload(arg1 || "jobvision");
+      console.log(r.report);
+      console.log(r.fixed ? "\n✔ attached resumes download now." : "\n✘ still failing — send the report above.");
+      break;
+    }
+
     case "test-ai": {
       const sc = makeScorer();
       const r = await sc.score({ source: "test", id: "1", name: "Test", jobTitle: "Backend Developer" },

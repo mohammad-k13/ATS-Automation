@@ -77,13 +77,32 @@ async function tokenFromStorage(page: any): Promise<string | null> {
     .catch(() => null);
 }
 
+export interface SavedCookie {
+  name: string;
+  value: string;
+  domain: string;
+  path: string;
+}
+
+export interface LoginResult<T> {
+  token: string;
+  /** cookies of *.jobvision.ir after login (some file links need them) */
+  cookies: SavedCookie[];
+  after?: T;
+}
+
 export async function jobvisionLogin(opts: LoginOptions): Promise<string> {
+  return (await loginInBrowser(opts)).token;
+}
+
+/** Log in in a hidden browser; optionally keep using the logged-in browser (`after`) before it closes. */
+export async function loginInBrowser<T = undefined>(opts: LoginOptions, after?: (ctx: any, page: any) => Promise<T>): Promise<LoginResult<T>> {
   const log = opts.log ?? (() => {});
   const timeout = opts.timeoutMs ?? (opts.show ? 180_000 : 60_000);
   if (!opts.email || !opts.password) throw new Error("ایمیل و رمز عبور جاب‌ویژن وارد نشده");
   const browser = await launch(opts);
   try {
-    const ctx = await browser.newContext({ locale: "fa-IR", viewport: { width: 1280, height: 860 } });
+    const ctx = await browser.newContext({ locale: "fa-IR", viewport: { width: 1280, height: 860 }, acceptDownloads: true });
     const page = await ctx.newPage();
     let token: string | null = null;
     page.on("request", (r: any) => {
@@ -137,7 +156,46 @@ export async function jobvisionLogin(opts: LoginOptions): Promise<string> {
       throw new Error(`ورود انجام نشد (توکن دریافت نشد). تصویر صفحه: ${shot}\nاگر کپچا یا کد تأیید دارد، با «نمایش مرورگر» امتحان کنید.`);
     }
     log("ورود موفق ✔");
-    return token;
+    const result: LoginResult<T> = { token, cookies: await jobvisionCookies(ctx) };
+    if (after) {
+      result.after = await after(ctx, page);
+      result.cookies = await jobvisionCookies(ctx); // may have grown while using the panel
+    }
+    return result;
+  } finally {
+    await browser.close().catch(() => {});
+  }
+}
+
+async function jobvisionCookies(ctx: any): Promise<SavedCookie[]> {
+  const all: any[] = await ctx.cookies().catch(() => []);
+  return all.filter((c) => /jobvision|127\.0\.0\.1|localhost/.test(c.domain)).map((c) => ({ name: c.name, value: c.value, domain: c.domain, path: c.path }));
+}
+
+/** Open a browser that is already "logged in" by handing the panel our token (when no password is saved). */
+export async function browserWithToken<T>(opts: { token: string; panelBase: string; browser?: string }, fn: (ctx: any, page: any) => Promise<T>): Promise<{ after: T; cookies: SavedCookie[] }> {
+  const browser = await launch({ email: "", password: "", browser: opts.browser });
+  try {
+    const ctx = await browser.newContext({ locale: "fa-IR", viewport: { width: 1280, height: 860 }, acceptDownloads: true });
+    // the panel (oidc-client) keeps the logged-in user in sessionStorage
+    const exp = (() => {
+      try {
+        return JSON.parse(Buffer.from(opts.token.split(".")[1], "base64url").toString()).exp;
+      } catch {
+        return Math.floor(Date.now() / 1000) + 3600;
+      }
+    })();
+    const user = JSON.stringify({ access_token: opts.token, token_type: "Bearer", expires_at: exp, scope: "openid profile JobVisionApi", profile: {} });
+    await ctx.addInitScript(([key, value]: string[]) => {
+      try {
+        sessionStorage.setItem(key, value);
+      } catch {
+        /* ignore */
+      }
+    }, ["oidc.user:https://account.jobvision.ir:EmployerClient", user]);
+    const page = await ctx.newPage();
+    const after = await fn(ctx, page);
+    return { after, cookies: await jobvisionCookies(ctx) };
   } finally {
     await browser.close().catch(() => {});
   }

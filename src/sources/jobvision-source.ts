@@ -142,7 +142,7 @@ export function extractJobAd(html: string): string {
   throw new Error("متن آگهی در صفحهٔ عمومی پیدا نشد");
 }
 
-const fileAuthMemo: { way?: string } = ((globalThis as any).__atsFileAuth ??= {});
+export const fileAuthMemo: { way?: string } = ((globalThis as any).__atsFileAuth ??= {});
 const fileIdOf = (url?: string | null) => (url ? new URL(url, "https://x").searchParams.get("FileId") : null);
 const isPdf = (d: Uint8Array) => d[0] === 0x25 && d[1] === 0x50 && d[2] === 0x44 && d[3] === 0x46;
 function extOf(d: Uint8Array, ct: string, cd: string | null) {
@@ -351,16 +351,29 @@ export class JobvisionSource implements Source {
    * The file the candidate uploaded. The panel only gives a plain link, so try the ways it may be
    * authorised (none / bearer header / token in the link) and remember the one that works.
    */
-  async downloadAttachedCv(app: Application): Promise<ResumeFile | null> {
+  /** Where the panel shows this candidate and the plain link to their uploaded file. */
+  attachmentLinks(app: Application): { profileUrl: string; fileUrl: string | null; panelBase: string } {
     const fileId = (app.extra?.personalCvFileId as number | string | undefined) ?? fileIdOf(app.resumeUrl);
-    if (!fileId) return null;
-    const url = `${this.cfg.fileBase}/Files/Download?FileId=${encodeURIComponent(String(fileId))}`;
+    return {
+      profileUrl: app.profileUrl || `${this.cfg.panelBase}/jobs/${app.jobId}/applications/${app.id}/jobvision-profile`,
+      fileUrl: fileId ? `${this.cfg.fileBase}/Files/Download?FileId=${encodeURIComponent(String(fileId))}` : null,
+      panelBase: this.cfg.panelBase,
+    };
+  }
+
+  async downloadAttachedCv(app: Application): Promise<ResumeFile | null> {
+    const url = this.attachmentLinks(app).fileUrl;
+    if (!url) return null;
+    const cookie = this.cookieHeader(url);
     const ways: Record<string, () => Promise<Response>> = {
+      "cookie+bearer": () => httpFetch(url, { headers: { Cookie: cookie, Authorization: `Bearer ${this.token}`, Referer: `${this.cfg.panelBase}/` } }, this.cfg.proxy, 120_000) as any,
+      cookie: () => httpFetch(url, { headers: { Cookie: cookie, Referer: `${this.cfg.panelBase}/` } }, this.cfg.proxy, 120_000) as any,
       bearer: () => httpFetch(url, { headers: { Authorization: `Bearer ${this.token}`, Referer: `${this.cfg.panelBase}/`, Origin: this.cfg.panelBase } }, this.cfg.proxy, 120_000) as any,
       none: () => httpFetch(url, { headers: { Referer: `${this.cfg.panelBase}/` } }, this.cfg.proxy, 120_000) as any,
       query: () => httpFetch(`${url}&access_token=${encodeURIComponent(this.token)}`, { headers: { Referer: `${this.cfg.panelBase}/` } }, this.cfg.proxy, 120_000) as any,
     };
-    const order = [fileAuthMemo.way, "bearer", "none", "query"].filter((w, i, a): w is string => !!w && a.indexOf(w) === i);
+    const order = [fileAuthMemo.way, ...(cookie ? ["cookie+bearer", "cookie"] : []), "bearer", "none", "query"]
+      .filter((w, i, a): w is string => !!w && a.indexOf(w) === i && (!!cookie || !w.startsWith("cookie")));
     const tried: string[] = [];
     for (const way of order) {
       const res = await ways[way]();
@@ -374,6 +387,24 @@ export class JobvisionSource implements Source {
       tried.push(`${way}:${res.status}`);
     }
     throw new Error(`دانلود فایل پیوست ناموفق بود (${tried.join("، ")})`);
+  }
+
+  /** Cookies saved by the last browser login (see auth/token.ts), as a Cookie header for this URL. */
+  private cookieHeader(url: string): string {
+    let list: { name: string; value: string; domain: string }[] = [];
+    try {
+      list = JSON.parse(process.env[`${this.name.toUpperCase()}_COOKIES`] || "[]");
+    } catch {
+      return "";
+    }
+    const host = new URL(url).hostname;
+    return list
+      .filter((c) => {
+        const d = c.domain.replace(/^\./, "");
+        return host === d || host.endsWith(`.${d}`);
+      })
+      .map((c) => `${c.name}=${c.value}`)
+      .join("; ");
   }
 
   /** Change the application status on Jobvision: 5 = رد شده، 4 = تایید اولیه، 6 = در حال بررسی */
