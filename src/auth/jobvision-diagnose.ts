@@ -106,8 +106,14 @@ export async function diagnoseAttachment(opts: {
 
   let r: { after: Awaited<ReturnType<typeof work>>; cookies: SavedCookie[] };
   let loggedInWith: Diagnosis["loggedInWith"];
-  if (opts.email && opts.password) {
-    const out = await loginInBrowser({ email: opts.email, password: opts.password, log }, work);
+  let out: Awaited<ReturnType<typeof loginInBrowser<Awaited<ReturnType<typeof work>>>>> | null = null;
+  if (opts.email && opts.password)
+    try {
+      out = await loginInBrowser({ email: opts.email, password: opts.password, log }, work);
+    } catch (e) {
+      log(`ورود با رمز نشد، با توکن ادامه می‌دهم: ${(e instanceof Error ? e.message : String(e)).split("\n")[0]}`);
+    }
+  if (out) {
     r = { after: out.after!, cookies: out.cookies };
     loggedInWith = "password";
   } else {

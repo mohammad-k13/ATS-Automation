@@ -27,6 +27,37 @@ const SUBMIT_SELECTORS = [
   'button[type="submit"]', 'input[type="submit"]', 'button:has-text("ورود")', 'button:has-text("ادامه")', 'button:has-text("Login")', 'button:has-text("Sign in")',
 ];
 
+const PASSWORD_OPTION = [
+  'a:has-text("رمز عبور")', 'button:has-text("رمز عبور")', 'span:has-text("ورود با رمز")', 'div[role=button]:has-text("رمز")',
+  'a:has-text("password")', 'button:has-text("password")', 'a:has-text("Password")', 'button:has-text("Password")',
+].join(", ");
+
+/** What the login page shows (fields, buttons, links) without any typed values, plus a screenshot. */
+async function describePage(page: any): Promise<string> {
+  const shot = path.resolve(process.env.DB_PATH ? path.dirname(process.env.DB_PATH) : "data", "login-error.png");
+  fs.mkdirSync(path.dirname(shot), { recursive: true });
+  await page.screenshot({ path: shot, fullPage: true }).catch(() => {});
+  const info = await page
+    .evaluate(() => {
+      const vis = (e: Element) => !!(e as HTMLElement).offsetParent;
+      const t = (e: Element) => (e.textContent ?? "").replace(/\s+/g, " ").trim().slice(0, 50);
+      return {
+        inputs: [...document.querySelectorAll("input")].filter(vis).map((i) => `${i.type}${i.name ? ` name=${i.name}` : ""}${i.placeholder ? ` «${i.placeholder}»` : ""}`),
+        buttons: [...document.querySelectorAll("button, [role=button], input[type=submit]")].filter(vis).map(t).filter(Boolean),
+        links: [...document.querySelectorAll("a")].filter(vis).map(t).filter(Boolean).slice(0, 15),
+      };
+    })
+    .catch(() => null);
+  const url = String(page.url()).split("?")[0];
+  return [
+    `آدرس صفحه: ${url}`,
+    info && `فیلدها: ${info.inputs.join(" | ") || "-"}`,
+    info && `دکمه‌ها: ${info.buttons.join(" | ") || "-"}`,
+    info && `لینک‌ها: ${info.links.join(" | ") || "-"}`,
+    `تصویر صفحه: ${shot}`,
+  ].filter(Boolean).join("\n");
+}
+
 async function launch(opts: LoginOptions) {
   const { chromium } = await import("playwright-core");
   const tries: { label: string; o: any }[] = [];
@@ -122,7 +153,7 @@ export async function loginInBrowser<T = undefined>(opts: LoginOptions, after?: 
         user = await firstVisible(page, USER_SELECTORS, 20_000);
       }
     }
-    if (!user) throw new Error("فرم ورود پیدا نشد");
+    if (!user) throw new Error(`فرم ورود پیدا نشد\n${await describePage(page)}`);
     log("وارد کردن ایمیل…");
     await user.fill(opts.email);
 
@@ -131,9 +162,18 @@ export async function loginInBrowser<T = undefined>(opts: LoginOptions, after?: 
       // two-step form: email first, then password
       const next = await firstVisible(page, SUBMIT_SELECTORS, 3_000);
       if (next) await next.click();
-      pass = await firstVisible(page, PASS_SELECTORS, 20_000);
+      pass = await firstVisible(page, PASS_SELECTORS, 8_000);
     }
-    if (!pass) throw new Error("فیلد رمز عبور پیدا نشد (ممکن است ورود با کد پیامکی باشد؛ با گزینهٔ «نمایش مرورگر» امتحان کنید)");
+    if (!pass) {
+      // the site may default to an SMS code and offer "log in with password" as a link/button
+      const withPassword = page.locator(PASSWORD_OPTION).first();
+      if (await withPassword.isVisible({ timeout: 5_000 }).catch(() => false)) {
+        log("انتخاب «ورود با رمز عبور»…");
+        await withPassword.click().catch(() => {});
+        pass = await firstVisible(page, PASS_SELECTORS, 15_000);
+      }
+    }
+    if (!pass) throw new Error(`فیلد رمز عبور پیدا نشد (ممکن است ورود با کد پیامکی باشد؛ با گزینهٔ «نمایش مرورگر» امتحان کنید)\n${await describePage(page)}`);
     log("وارد کردن رمز عبور…");
     await pass.fill(opts.password);
     const submit = await firstVisible(page, SUBMIT_SELECTORS, 3_000);
