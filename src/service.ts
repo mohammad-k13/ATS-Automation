@@ -886,6 +886,13 @@ export async function diagnoseAttachmentDownload(src: string) {
   return { fixed, report };
 }
 
+/** The screenshot the last failed auto-login saved (to see what the login page showed). */
+export function loginScreenshot(): Uint8Array {
+  const f = path.join(dataDir(), "login-error.png");
+  if (!fs.existsSync(f)) throw new UserError("تصویری ذخیره نشده", 404);
+  return fs.readFileSync(f);
+}
+
 /** Reject on the job site itself (Jobvision status 5). */
 export async function rejectOnSite(src: string, jobId: string, ids: string[]) {
   if (!ids.length) throw new UserError("کسی انتخاب نشده");

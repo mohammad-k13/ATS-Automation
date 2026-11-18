@@ -59,6 +59,12 @@ export default function AutoLogin({ p, onChange }: { p: P; onChange: () => void 
       </div>
       {busy === "login" && <div className="small muted">مرورگر در پس‌زمینه وارد سایت می‌شود؛ معمولاً ۱۰ تا ۳۰ ثانیه طول می‌کشد.</div>}
       {msg && <div className={`notice ${msg.cls}`} style={{ whiteSpace: "pre-wrap" }}>{msg.text}</div>}
+      {msg?.text.includes("تصویر صفحه") && (
+        <a href={`/api/debug/login-shot?t=${Date.now()}`} target="_blank" rel="noreferrer">
+          <img src={`/api/debug/login-shot?t=${Date.now()}`} alt="تصویر صفحهٔ ورود" style={{ maxWidth: "100%", border: "1px solid var(--border)", borderRadius: 8 }} />
+        </a>
+      )}
+      <a className="small" href="/api/debug/login-shot" target="_blank" rel="noreferrer">آخرین تصویر خطای ورود</a>
       <AttachmentFix src={p.name} />
       <div className="small faint">ایمیل و رمز فقط روی همین کامپیوتر در فایل <span className="ltr">.env</span> ذخیره می‌شوند و برای ورود خودکار هر چند ساعت یک بار استفاده می‌شوند.</div>
     </div>

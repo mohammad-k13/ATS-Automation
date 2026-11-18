@@ -49,6 +49,10 @@ async function describePage(page: any): Promise<string> {
         inputs: [...document.querySelectorAll("input")].filter(vis).map((i) => i.type + (i.name ? " name=" + i.name : "") + (i.placeholder ? " «" + i.placeholder + "»" : "")),
         buttons: [...document.querySelectorAll("button, [role=button], input[type=submit]")].filter(vis).map(t).filter(Boolean),
         links: [...document.querySelectorAll("a")].filter(vis).map(t).filter(Boolean).slice(0, 15),
+        next: [...document.querySelectorAll("a, button, [role=button]")].filter((e) => t(e) === "ادامه").map((e) =>
+          e.outerHTML.replace(/value="[^"]*"/g, "").replace(/\\s+/g, " ").slice(0, 300)),
+        captcha: !!document.querySelector("iframe[src*=captcha], [class*=captcha i], [id*=captcha i], iframe[src*=recaptcha], iframe[src*=arcaptcha]"),
+        errors: [...document.querySelectorAll(".text-danger, .invalid-feedback, [role=alert], .error, .alert")].filter(vis).map(t).filter(Boolean),
       };
     })()`)
     .catch(() => null);
@@ -58,6 +62,9 @@ async function describePage(page: any): Promise<string> {
     info && `فیلدها: ${info.inputs.join(" | ") || "-"}`,
     info && `دکمه‌ها: ${info.buttons.join(" | ") || "-"}`,
     info && `لینک‌ها: ${info.links.join(" | ") || "-"}`,
+    info?.next?.length && `دکمهٔ ادامه: ${info.next.join(" ")}`,
+    info?.captcha && "کپچا در صفحه هست",
+    info?.errors?.length && `پیام خطا: ${info.errors.join(" | ")}`,
     `تصویر صفحه: ${shot}`,
   ].filter(Boolean).join("\n");
 }
@@ -179,15 +186,27 @@ export async function loginInBrowser<T = undefined>(opts: LoginOptions, after?: 
     }
     if (!user) throw new Error(`فرم ورود پیدا نشد\n${await describePage(page)}`);
     log("وارد کردن ایمیل…");
-    await user.fill(opts.email);
+    // type it like a person: some forms only enable «ادامه» after real key presses
+    await user.click().catch(() => {});
+    await user.fill("");
+    await user.pressSequentially(opts.email, { delay: 40 });
+    await user.dispatchEvent("change").catch(() => {});
+    await user.evaluate((e: any) => e.blur()).catch(() => {});
 
     let pass = await firstVisible(page, PASS_SELECTORS, 1_500);
     if (!pass) {
       // two-step form: email first, then password
       const next = await firstVisible(page, SUBMIT_SELECTORS, 3_000);
-      if (next) await next.click();
-      else await user.press("Enter");
+      if (next) {
+        log(`کلیک روی «${((await next.textContent().catch(() => "")) || "ادامه").trim().slice(0, 20)}»…`);
+        await next.click({ timeout: 5_000 }).catch(() => next.click({ force: true, timeout: 5_000 }).catch(() => {}));
+      } else await user.press("Enter");
       pass = await firstVisible(page, PASS_SELECTORS, 8_000);
+      if (!pass) {
+        log("رمز ظاهر نشد؛ امتحان با Enter…");
+        await user.press("Enter").catch(() => {});
+        pass = await firstVisible(page, PASS_SELECTORS, 8_000);
+      }
     }
     if (!pass) {
       // the site may default to an SMS code and offer "log in with password" as a link/button
