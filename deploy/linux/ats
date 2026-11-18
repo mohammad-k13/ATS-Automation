@@ -92,6 +92,10 @@ cmd_update() {
   for i in $(seq 1 45); do
     if health | grep -q "\"version\":\"$new\""; then
       ok "updated to ${new:0:7}"
+      # refresh this command too (new file + rename, so the running copy is not touched)
+      if [ -f "$rel/deploy/linux/ats" ] && ! cmp -s "$rel/deploy/linux/ats" /usr/local/bin/ats; then
+        install -m 755 "$rel/deploy/linux/ats" /usr/local/bin/ats.new && mv -f /usr/local/bin/ats.new /usr/local/bin/ats && log "ats command updated"
+      fi
       # keep the newest releases only
       ls -1dt "$ROOT"/releases/*/ 2>/dev/null | tail -n +$((KEEP_RELEASES + 1)) | while read -r d; do
         [ "$(readlink -f "$ROOT/current")/" = "$d" ] || rm -rf -- "$d"
