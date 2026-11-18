@@ -44,7 +44,7 @@ const hasBrowser = ["/opt/pw-browsers/chromium", "/usr/bin/chromium", "/usr/bin/
 test("manual login through the remote view, then the token renews from the cookie without a captcha", { skip: !hasBrowser && "no Chromium" }, async () => {
   const srv = server().listen(PORT);
   try {
-    let saved: { token: string; cookies: SavedCookie[] } | null = null;
+    let saved = null as { token: string; cookies: SavedCookie[] } | null;
     await remote.startRemoteLogin({ src: "jobvision", loginUrl: `${BASE}/`, onDone: (token, cookies) => (saved = { token, cookies }) });
     assert.equal(remote.status("jobvision").open, true);
     assert.ok((await remote.screenshot("jobvision")).length > 1000);
