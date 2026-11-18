@@ -3,6 +3,7 @@
  * machine (Edge or Chrome) and capture the API token the panel uses.
  * Nothing is downloaded: playwright-core drives the installed browser.
  */
+import { randomBytes } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 
@@ -37,18 +38,19 @@ async function describePage(page: any): Promise<string> {
   const shot = path.resolve(process.env.DB_PATH ? path.dirname(process.env.DB_PATH) : "data", "login-error.png");
   fs.mkdirSync(path.dirname(shot), { recursive: true });
   await page.screenshot({ path: shot, fullPage: true }).catch(() => {});
+  // a string, not a function: tsx adds helpers to named inner functions that do not exist in the page
   const info = await page
-    .evaluate(() => {
-      const vis = (e: Element) => !!(e as HTMLElement).offsetParent;
-      const t = (e: Element) => (e.textContent ?? "").replace(/\s+/g, " ").trim().slice(0, 50);
+    .evaluate(`(() => {
+      const vis = (e) => !!(e.offsetParent || e.getClientRects().length);
+      const t = (e) => (e.textContent || "").replace(/\\s+/g, " ").trim().slice(0, 50);
       return {
-        inputs: [...document.querySelectorAll("input")].filter(vis).map((i) => `${i.type}${i.name ? ` name=${i.name}` : ""}${i.placeholder ? ` «${i.placeholder}»` : ""}`),
+        inputs: [...document.querySelectorAll("input")].filter(vis).map((i) => i.type + (i.name ? " name=" + i.name : "") + (i.placeholder ? " «" + i.placeholder + "»" : "")),
         buttons: [...document.querySelectorAll("button, [role=button], input[type=submit]")].filter(vis).map(t).filter(Boolean),
         links: [...document.querySelectorAll("a")].filter(vis).map(t).filter(Boolean).slice(0, 15),
       };
-    })
+    })()`)
     .catch(() => null);
-  const url = String(page.url()).split("?")[0];
+  const url = String(page.url()).replace(/(access_token|id_token)=[^&]+/g, "$1=***").slice(0, 300);
   return [
     `آدرس صفحه: ${url}`,
     info && `فیلدها: ${info.inputs.join(" | ") || "-"}`,
@@ -56,6 +58,21 @@ async function describePage(page: any): Promise<string> {
     info && `لینک‌ها: ${info.links.join(" | ") || "-"}`,
     `تصویر صفحه: ${shot}`,
   ].filter(Boolean).join("\n");
+}
+
+/** The panel's own sign-in link: shows the email + password form and returns to the panel with a token. */
+export function authorizeUrl(): string {
+  const rnd = () => randomBytes(16).toString("hex");
+  const q = new URLSearchParams({
+    client_id: "EmployerClient",
+    redirect_uri: "https://employer.jobvision.ir/auth-callback",
+    response_type: "id_token token",
+    scope: "openid profile JobVisionApi roles offline_access IdentityServerApi",
+    nonce: rnd(),
+    state: rnd(),
+    role: "employer",
+  });
+  return `https://account.jobvision.ir/connect/authorize?${q}`;
 }
 
 async function launch(opts: LoginOptions) {
@@ -142,7 +159,12 @@ export async function loginInBrowser<T = undefined>(opts: LoginOptions, after?: 
     });
 
     log("باز کردن صفحهٔ ورود…");
-    await page.goto(opts.loginUrl || process.env.JOBVISION_LOGIN_URL || "https://employer.jobvision.ir/", { waitUntil: "domcontentloaded", timeout: 60_000 });
+    // capture the token from the sign-in redirect too (…/auth-callback#access_token=…)
+    page.on("framenavigated", (f: any) => {
+      const m = !token && String(f.url()).match(/[#&]access_token=([\w-]+\.[\w-]+\.[\w-]+)/);
+      if (m) token = m[1];
+    });
+    await page.goto(opts.loginUrl || process.env.JOBVISION_LOGIN_URL || authorizeUrl(), { waitUntil: "domcontentloaded", timeout: 60_000 });
 
     // Some panels show a landing page with a "login" link first
     let user = await firstVisible(page, USER_SELECTORS, 15_000);
@@ -198,6 +220,7 @@ export async function loginInBrowser<T = undefined>(opts: LoginOptions, after?: 
     log("ورود موفق ✔");
     const result: LoginResult<T> = { token, cookies: await jobvisionCookies(ctx) };
     if (after) {
+      await injectToken(ctx, token); // in case the panel did not take the sign-in redirect itself
       result.after = await after(ctx, page);
       result.cookies = await jobvisionCookies(ctx); // may have grown while using the panel
     }
@@ -205,6 +228,26 @@ export async function loginInBrowser<T = undefined>(opts: LoginOptions, after?: 
   } finally {
     await browser.close().catch(() => {});
   }
+}
+
+
+/** The panel (oidc-client) keeps the logged-in user in sessionStorage; put our token there for every page. */
+async function injectToken(ctx: any, token: string) {
+    const exp = (() => {
+      try {
+        return JSON.parse(Buffer.from(token.split(".")[1], "base64url").toString()).exp;
+      } catch {
+        return Math.floor(Date.now() / 1000) + 3600;
+      }
+    })();
+    const user = JSON.stringify({ access_token: token, token_type: "Bearer", expires_at: exp, scope: "openid profile JobVisionApi", profile: {} });
+    await ctx.addInitScript(([key, value]: string[]) => {
+      try {
+        sessionStorage.setItem(key, value);
+      } catch {
+        /* ignore */
+      }
+    }, ["oidc.user:https://account.jobvision.ir:EmployerClient", user]);
 }
 
 async function jobvisionCookies(ctx: any): Promise<SavedCookie[]> {
@@ -217,22 +260,7 @@ export async function browserWithToken<T>(opts: { token: string; panelBase: stri
   const browser = await launch({ email: "", password: "", browser: opts.browser });
   try {
     const ctx = await browser.newContext({ locale: "fa-IR", viewport: { width: 1280, height: 860 }, acceptDownloads: true });
-    // the panel (oidc-client) keeps the logged-in user in sessionStorage
-    const exp = (() => {
-      try {
-        return JSON.parse(Buffer.from(opts.token.split(".")[1], "base64url").toString()).exp;
-      } catch {
-        return Math.floor(Date.now() / 1000) + 3600;
-      }
-    })();
-    const user = JSON.stringify({ access_token: opts.token, token_type: "Bearer", expires_at: exp, scope: "openid profile JobVisionApi", profile: {} });
-    await ctx.addInitScript(([key, value]: string[]) => {
-      try {
-        sessionStorage.setItem(key, value);
-      } catch {
-        /* ignore */
-      }
-    }, ["oidc.user:https://account.jobvision.ir:EmployerClient", user]);
+    await injectToken(ctx, opts.token);
     const page = await ctx.newPage();
     const after = await fn(ctx, page);
     return { after, cookies: await jobvisionCookies(ctx) };
