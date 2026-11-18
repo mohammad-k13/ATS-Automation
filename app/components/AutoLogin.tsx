@@ -2,6 +2,7 @@
 import { useState } from "react";
 import { api, type Status } from "../lib/api";
 import { refresh } from "../lib/cache";
+import RemoteLogin from "./RemoteLogin";
 import TokenButton from "./TokenDialog";
 
 type P = Status["platforms"][number];
@@ -64,6 +65,7 @@ export default function AutoLogin({ p, onChange }: { p: P; onChange: () => void 
           <img src={`/api/debug/login-shot?t=${Date.now()}`} alt="تصویر صفحهٔ ورود" style={{ maxWidth: "100%", border: "1px solid var(--border)", borderRadius: 8 }} />
         </a>
       )}
+      <RemoteLogin src={p.name} onDone={onChange} />
       <a className="small" href="/api/debug/login-shot" target="_blank" rel="noreferrer">آخرین تصویر خطای ورود</a>
       <AttachmentFix src={p.name} />
       <div className="small faint">ایمیل و رمز فقط روی همین کامپیوتر در فایل <span className="ltr">.env</span> ذخیره می‌شوند و برای ورود خودکار هر چند ساعت یک بار استفاده می‌شوند.</div>

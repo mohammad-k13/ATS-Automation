@@ -147,7 +147,12 @@ async function main() {
       const src = arg1 || "jobvision";
       if (flags.email || flags.password) saveCredentials(src, flags.email ?? "", flags.password);
       if (!hasCredentials(src)) throw new Error(`Save credentials first: npm run ats -- login ${src} --email you@company.com --password "..."`);
-      await loginAndSave(src, { show: flags.show, log: (l) => console.log(l) });
+      try {
+        await loginAndSave(src, { show: flags.show, log: (l) => console.log(l) });
+      } catch (e) {
+        console.error(e instanceof Error ? e.message : e);
+        throw new Error("If the login page has a captcha: open the dashboard → Settings → Jobvision → «ورود دستی». After that the token renews itself.");
+      }
       const t = tokenInfo(src);
       console.log(`✔ token saved to .env, valid until ${t.expiresAt}`);
       break;

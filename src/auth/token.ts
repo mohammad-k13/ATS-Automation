@@ -1,6 +1,6 @@
 import { jwtExpiry } from "../sources/jobvision-source";
 import { saveSetting } from "../settings-store";
-import { loginInBrowser, type SavedCookie } from "./jobvision-login";
+import { loginInBrowser, renewWithCookies, type SavedCookie } from "./jobvision-login";
 
 const env = process.env;
 export const tokenKey = (src: string) => `${src.toUpperCase()}_TOKEN`;
@@ -47,9 +47,29 @@ export async function loginAndSave(src: string, opts: { show?: boolean; log?: (s
   return p;
 }
 
-/** If the token is missing/expired (or `force`) and credentials are saved, log in again. Returns true if a valid token is available. */
+/** New token from the remembered Jobvision sign-in (no password, no captcha). Returns false if that session ended. */
+export async function renewToken(src: string, log?: (s: string) => void): Promise<boolean> {
+  const running = inFlight().get(src);
+  if (running) return running.then(() => true, () => false);
+  const p = (async () => {
+    log?.("تمدید توکن با ورود قبلی…");
+    const r = await renewWithCookies({ cookies: savedCookies(src) });
+    if (!r) throw new Error("ورود قبلی منقضی شده");
+    writeEnv(tokenKey(src), r.token);
+    saveCookies(src, r.cookies);
+    return r.token;
+  })().finally(() => inFlight().delete(src));
+  inFlight().set(src, p);
+  return p.then(() => true, () => false);
+}
+
+/**
+ * Make sure there is a valid token: renew it from the remembered sign-in first, then try email/password.
+ * Returns true if a valid token is available.
+ */
 export async function ensureToken(src: string, opts: { force?: boolean; log?: (s: string) => void } = {}): Promise<boolean> {
   if (!opts.force && tokenInfo(src).valid) return true;
+  if (savedCookies(src).length && (await renewToken(src, opts.log))) return true;
   if (!hasCredentials(src)) return tokenInfo(src).valid;
   await loginAndSave(src, { log: opts.log });
   return true;

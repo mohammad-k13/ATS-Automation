@@ -70,9 +70,10 @@ async function describePage(page: any): Promise<string> {
 }
 
 /** The panel's own sign-in link: shows the email + password form and returns to the panel with a token. */
-export function authorizeUrl(): string {
+export function authorizeUrl(extra: Record<string, string> = {}): string {
   const rnd = () => randomBytes(16).toString("hex");
   const q = new URLSearchParams({
+    ...extra,
     client_id: "EmployerClient",
     redirect_uri: "https://employer.jobvision.ir/auth-callback",
     response_type: "id_token token",
@@ -84,7 +85,7 @@ export function authorizeUrl(): string {
   return `https://account.jobvision.ir/connect/authorize?${q}`;
 }
 
-async function launch(opts: LoginOptions) {
+export async function launch(opts: LoginOptions) {
   const { chromium } = await import("playwright-core");
   const tries: { label: string; o: any }[] = [];
   const pref = opts.browser || process.env.BROWSER || "";
@@ -139,6 +140,10 @@ export interface SavedCookie {
   value: string;
   domain: string;
   path: string;
+  expires?: number;
+  httpOnly?: boolean;
+  secure?: boolean;
+  sameSite?: "Strict" | "Lax" | "None";
 }
 
 export interface LoginResult<T> {
@@ -170,8 +175,7 @@ export async function loginInBrowser<T = undefined>(opts: LoginOptions, after?: 
     log("باز کردن صفحهٔ ورود…");
     // capture the token from the sign-in redirect too (…/auth-callback#access_token=…)
     page.on("framenavigated", (f: any) => {
-      const m = !token && String(f.url()).match(/[#&]access_token=([\w-]+\.[\w-]+\.[\w-]+)/);
-      if (m) token = m[1];
+      token ??= tokenFromUrl(f.url());
     });
     await page.goto(opts.loginUrl || process.env.JOBVISION_LOGIN_URL || authorizeUrl(), { waitUntil: "domcontentloaded", timeout: 60_000 });
 
@@ -272,17 +276,58 @@ async function injectToken(ctx: any, token: string) {
     }, ["oidc.user:https://account.jobvision.ir:EmployerClient", user]);
 }
 
-async function jobvisionCookies(ctx: any): Promise<SavedCookie[]> {
+export async function jobvisionCookies(ctx: any): Promise<SavedCookie[]> {
   const all: any[] = await ctx.cookies().catch(() => []);
-  return all.filter((c) => /jobvision|127\.0\.0\.1|localhost/.test(c.domain)).map((c) => ({ name: c.name, value: c.value, domain: c.domain, path: c.path }));
+  return all
+    .filter((c) => /jobvision|127\.0\.0\.1|localhost/.test(c.domain))
+    .map((c) => ({ name: c.name, value: c.value, domain: c.domain, path: c.path, expires: c.expires, httpOnly: c.httpOnly, secure: c.secure, sameSite: c.sameSite }));
+}
+
+/** Put saved cookies back into a browser (so Jobvision remembers the earlier login). */
+export async function restoreCookies(ctx: any, cookies: SavedCookie[]) {
+  const ok = cookies.filter((c) => c.name && c.domain).map((c) => ({ ...c, path: c.path || "/", expires: c.expires && c.expires > 0 ? c.expires : undefined }));
+  for (const c of ok) await ctx.addCookies([c]).catch(() => {});
+}
+
+/** Read the access token from a sign-in redirect URL (…#access_token=…). */
+export function tokenFromUrl(url: string): string | null {
+  return String(url).match(/[#&]access_token=([\w-]+\.[\w-]+\.[\w-]+)/)?.[1] ?? null;
+}
+
+/**
+ * Get a fresh token without typing anything (no captcha): Jobvision's sign-in remembers this browser by
+ * its cookies, so asking for a token with prompt=none returns one while that sign-in session lasts.
+ * Returns null when the session has ended and someone has to log in again.
+ */
+export async function renewWithCookies(opts: { cookies: SavedCookie[]; browser?: string; authorize?: string }): Promise<{ token: string; cookies: SavedCookie[] } | null> {
+  if (!opts.cookies.length) return null;
+  const browser = await launch({ email: "", password: "", browser: opts.browser });
+  try {
+    const ctx = await browser.newContext({ locale: "fa-IR" });
+    await restoreCookies(ctx, opts.cookies);
+    const page = await ctx.newPage();
+    let token: string | null = null;
+    page.on("framenavigated", (f: any) => (token ??= tokenFromUrl(f.url())));
+    await page.goto(opts.authorize ?? authorizeUrl({ prompt: "none" }), { waitUntil: "domcontentloaded", timeout: 45_000 }).catch(() => {});
+    const end = Date.now() + 20_000;
+    while (!token && Date.now() < end) {
+      token = tokenFromUrl(page.url());
+      if (/[#&?]error=/.test(page.url())) break; // login_required: the session ended
+      await page.waitForTimeout(300);
+    }
+    return token ? { token, cookies: await jobvisionCookies(ctx) } : null;
+  } finally {
+    await browser.close().catch(() => {});
+  }
 }
 
 /** Open a browser that is already "logged in" by handing the panel our token (when no password is saved). */
-export async function browserWithToken<T>(opts: { token: string; panelBase: string; browser?: string }, fn: (ctx: any, page: any) => Promise<T>): Promise<{ after: T; cookies: SavedCookie[] }> {
+export async function browserWithToken<T>(opts: { token: string; panelBase: string; browser?: string; cookies?: SavedCookie[] }, fn: (ctx: any, page: any) => Promise<T>): Promise<{ after: T; cookies: SavedCookie[] }> {
   const browser = await launch({ email: "", password: "", browser: opts.browser });
   try {
     const ctx = await browser.newContext({ locale: "fa-IR", viewport: { width: 1280, height: 860 }, acceptDownloads: true });
     await injectToken(ctx, opts.token);
+    if (opts.cookies) await restoreCookies(ctx, opts.cookies);
     const page = await ctx.newPage();
     const after = await fn(ctx, page);
     return { after, cookies: await jobvisionCookies(ctx) };

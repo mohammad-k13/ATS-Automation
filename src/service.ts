@@ -22,7 +22,8 @@ import { loadSources, validateSourcesYaml } from "./sources/index";
 import { AuthError } from "./sources/http-source";
 import { fileAuthMemo, JobvisionSource, type JobPost } from "./sources/jobvision-source";
 import { diagnoseAttachment } from "./auth/jobvision-diagnose";
-import { credentials, ensureToken, hasCredentials, loginAndSave, saveCookies, saveCredentials, tokenInfo, tokenKey, writeEnv } from "./auth/token";
+import { credentials, ensureToken, hasCredentials, loginAndSave, saveCookies, savedCookies, saveCredentials, tokenInfo, tokenKey, writeEnv } from "./auth/token";
+import * as remote from "./auth/remote-login";
 export { tokenInfo };
 import { decisionOf, defaultPartial, type Application, type Criteria, type Source } from "./types";
 
@@ -89,6 +90,35 @@ export async function loginNow(src: string, show = false) {
   }
   return { ...tokenInfo(src), log };
 }
+
+// ---------- manual login from the dashboard (login page with a captcha) ----------
+const remoteCall = async <T>(f: () => Promise<T>): Promise<T> => {
+  try {
+    return await f();
+  } catch (e) {
+    throw new UserError(e instanceof Error ? e.message : String(e), 409);
+  }
+};
+export const remoteLogin = {
+  start: (src: string) => {
+    jobvision(src);
+    return remoteCall(() =>
+      remote.startRemoteLogin({
+        src, email: credentials(src).email, cookies: savedCookies(src),
+        onDone: (token, cookies) => {
+          writeEnv(tokenKey(src), token);
+          saveCookies(src, cookies);
+        },
+      }),
+    );
+  },
+  status: (src: string) => ({ ...remote.status(src), token: tokenInfo(src) }),
+  shot: (src: string) => remoteCall(() => remote.screenshot(src)),
+  click: (src: string, x: number, y: number) => remoteCall(() => remote.click(src, Math.min(1, Math.max(0, x)), Math.min(1, Math.max(0, y)))),
+  type: (src: string, text: string) => remoteCall(() => remote.type(src, String(text).slice(0, 200))),
+  key: (src: string, key: string) => remoteCall(() => remote.press(src, key)),
+  cancel: (src: string) => remote.cancel(src),
+};
 
 /** Make sure there is a valid token; logs in automatically if credentials are saved. */
 async function needToken(src: string) {
