@@ -17,7 +17,23 @@ function doPost(e) {
     const req = JSON.parse(e.postData.contents);
     if (req.secret !== SECRET) return out({ ok: false, error: "secret اشتباه است" });
     const ss = SpreadsheetApp.getActiveSpreadsheet();
-    const sh = req.sheet ? ss.getSheetByName(req.sheet) : ss.getSheets()[0];
+    if (req.action === "tabs") {
+      // every tab with its header row and number of data rows
+      const tabs = ss.getSheets().map((t) => ({
+        name: t.getName(),
+        headers: t.getLastColumn() ? t.getRange(1, 1, 1, t.getLastColumn()).getDisplayValues()[0].filter(String) : [],
+        rows: Math.max(t.getLastRow() - 1, 0),
+      }));
+      return out({ ok: true, title: ss.getName(), tabs });
+    }
+    let sh = req.sheet ? ss.getSheetByName(req.sheet) : ss.getSheets()[0];
+    if (!sh && req.action === "append" && req.create && req.headers) {
+      // a new tab asked for by name: create it with its header row
+      sh = ss.insertSheet(req.sheet);
+      sh.getRange(1, 1, 1, req.headers.length).setValues([req.headers]).setFontWeight("bold");
+      sh.setFrozenRows(1);
+      sh.setRightToLeft(true);
+    }
     if (!sh) return out({ ok: false, error: "برگه پیدا نشد: " + req.sheet });
     const lastCol = Math.max(sh.getLastColumn(), 1);
     const lastRow = sh.getLastRow();

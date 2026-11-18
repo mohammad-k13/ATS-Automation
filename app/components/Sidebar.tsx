@@ -38,6 +38,10 @@ export default function Sidebar() {
         );
       })}
       {st && !st.platforms.length && <div className="small faint" style={{ padding: "0 10px" }}>پلتفرمی فعال نیست</div>}
+      <div className="nav-title">ابزارها</div>
+      <Link href="/tasks" className={`nav-item ${path.startsWith("/tasks") ? "active" : ""}`}>
+        <span>خروجی و گزارش</span>
+      </Link>
       <div className="nav-title">تنظیمات</div>
       <Link href="/settings" className={`nav-item ${path.startsWith("/settings") ? "active" : ""}`}>
         <span>تنظیمات و اتصال‌ها</span>

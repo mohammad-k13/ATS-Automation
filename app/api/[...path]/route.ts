@@ -58,6 +58,18 @@ const routes: [string, string, H][] = [
   ["PUT", "platforms/:src/jobs/:id/status-map", (p, b) => svc.saveStatusMap(p.src, p.id, b ?? {})],
   ["POST", "platforms/:src/jobs/:id/site-status/preview", (p, b) => svc.previewSiteStatuses(p.src, p.id, b?.ids)],
   ["POST", "platforms/:src/jobs/:id/site-status/apply", (p, b) => svc.applySiteStatuses(p.src, p.id, b?.ids)],
+  ["POST", "platforms/:src/tasks/plan", (p, b) => svc.planTask(p.src, String(b?.instruction ?? ""), b?.previous)],
+  ["POST", "platforms/:src/tasks/preview", (p, b) => svc.previewTask(p.src, b?.plan)],
+  ["POST", "platforms/:src/tasks/run", (p, b) => svc.runTask(p.src, b?.plan)],
+  ["GET", "platforms/:src/tasks", (p) => svc.listSavedTasks(p.src)],
+  ["POST", "platforms/:src/tasks", (_, b) => svc.saveTask(b ?? {})],
+  ["DELETE", "platforms/:src/tasks/:tid", (p) => svc.deleteTask(p.tid)],
+  ["POST", "platforms/:src/tasks/:tid/run", (p) => svc.runSavedTask(p.src, p.tid)],
+  ["GET", "files/task/:token", async (p, _b, q) => {
+    const name = q.get("name") || "export.xlsx";
+    const f = await svc.taskFile(p.token, name);
+    return fileResponse(f.data, name, f.type);
+  }],
   ["GET", "gsheet", () => svc.getSheetSettings()],
   ["PUT", "gsheet", (_, b) => svc.saveSheetSettings(b ?? {})],
   ["POST", "gsheet/test", (_, b) => svc.testSheet(b ?? {})],

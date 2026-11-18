@@ -21,6 +21,7 @@ function useCrumbs(): { crumbs: Crumb[]; parent: string | null } {
     search.get("t") || jobs.data?.jobs.find((j) => j.id === jobId)?.title || apps.data?.find((a) => a.job)?.job || (jobId ? `آگهی ${jobId}` : "");
 
   if (path.startsWith("/settings")) return { crumbs: [{ label: "تنظیمات و اتصال‌ها" }], parent: "/" };
+  if (path.startsWith("/tasks")) return { crumbs: [{ label: "خروجی و گزارش" }], parent: "/" };
   if (path.startsWith("/report")) {
     const c: Crumb[] = [];
     if (src) c.push({ label: `آگهی‌های ${platformName(src)}`, href: `/p/${src}` });
