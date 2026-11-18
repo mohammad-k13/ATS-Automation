@@ -26,6 +26,8 @@ const USER_SELECTORS = [
 const PASS_SELECTORS = ['input[type="password"]'];
 const SUBMIT_SELECTORS = [
   'button[type="submit"]', 'input[type="submit"]', 'button:has-text("ورود")', 'button:has-text("ادامه")', 'button:has-text("Login")', 'button:has-text("Sign in")',
+  // Jobvision's sign-in page uses links styled as buttons
+  'a:text-is("ادامه")', 'a:text-is("ورود")', '[role=button]:has-text("ادامه")', '[role=button]:has-text("ورود")', 'a:has-text("ادامه")',
 ];
 
 const PASSWORD_OPTION = [
@@ -184,6 +186,7 @@ export async function loginInBrowser<T = undefined>(opts: LoginOptions, after?: 
       // two-step form: email first, then password
       const next = await firstVisible(page, SUBMIT_SELECTORS, 3_000);
       if (next) await next.click();
+      else await user.press("Enter");
       pass = await firstVisible(page, PASS_SELECTORS, 8_000);
     }
     if (!pass) {

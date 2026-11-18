@@ -47,3 +47,20 @@ test("login reads the token from the sign-in redirect, and describes an unknown 
     srv.close();
   }
 });
+
+test("login clicks «ادامه» and «ورود» when they are links (Jobvision sign-in page)", { skip: !hasBrowser && "no Chromium" }, async () => {
+  const PAGE = `<!doctype html><html><body>
+    <input name="username" type="text">
+    <a href="#">کارجو هستید؟ ثبت نام به عنوان کارجو</a>
+    <a href="#" id="next" onclick="event.preventDefault();p.hidden=false;go.hidden=false;next.hidden=true">ادامه</a>
+    <input id="p" name="password" type="password" hidden>
+    <a href="#" id="go" hidden onclick="event.preventDefault();location.href='/cb#access_token=ggg.hhh.iii'">ورود</a>
+  </body></html>`;
+  const srv = http.createServer((_q, r) => { r.writeHead(200, { "content-type": "text/html; charset=utf-8" }); r.end(PAGE); }).listen(8816);
+  try {
+    const r = await loginInBrowser({ email: "a@b.c", password: "pw", loginUrl: "http://127.0.0.1:8816/" });
+    assert.equal(r.token, "ggg.hhh.iii");
+  } finally {
+    srv.close();
+  }
+});
