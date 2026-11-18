@@ -3,6 +3,7 @@
  * Runs inside the Next.js server process (Node runtime).
  */
 import fs from "node:fs";
+import "./settings-store"; // saved dashboard settings override .env
 import fsp from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { zipSync } from "fflate";

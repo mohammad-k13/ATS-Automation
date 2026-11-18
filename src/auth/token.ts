@@ -1,5 +1,5 @@
-import fs from "node:fs";
 import { jwtExpiry } from "../sources/jobvision-source";
+import { saveSetting } from "../settings-store";
 import { jobvisionLogin } from "./jobvision-login";
 
 const env = process.env;
@@ -7,15 +7,9 @@ export const tokenKey = (src: string) => `${src.toUpperCase()}_TOKEN`;
 const emailKey = (src: string) => `${src.toUpperCase()}_EMAIL`;
 const passKey = (src: string) => `${src.toUpperCase()}_PASSWORD`;
 
-/** Replace (or add) KEY=value in .env and in process.env. */
+/** Save a setting (stored exactly as typed in settings.json, see settings-store.ts) and apply it now. */
 export function writeEnv(key: string, value: string) {
-  const file = ".env";
-  const lines = fs.existsSync(file) ? fs.readFileSync(file, "utf8").split(/\r?\n/) : [];
-  const i = lines.findIndex((l) => l.startsWith(`${key}=`));
-  if (i >= 0) lines[i] = `${key}=${value}`;
-  else lines.push(`${key}=${value}`);
-  fs.writeFileSync(file, lines.join("\n"));
-  env[key] = value;
+  saveSetting(key, value);
 }
 
 export function tokenInfo(src: string) {

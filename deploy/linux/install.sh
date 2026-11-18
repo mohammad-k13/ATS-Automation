@@ -210,7 +210,7 @@ if ! command -v chromium >/dev/null && ! command -v chromium-browser >/dev/null 
 fi
 
 # ---------------------------------------------------------------- dashboard login
-if ! grep -q '^ATS_PASSWORD_HASH=' "$DATA/.env"; then
+if ! grep -qs 'ATS_PASSWORD_HASH' "$DATA/.env" "$DATA/settings.json"; then
   say "Dashboard login"
   USER_NAME=${ATS_ADMIN_USER:-admin}
   PASS=${ATS_ADMIN_PASSWORD:-}

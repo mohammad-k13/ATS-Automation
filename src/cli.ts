@@ -1,4 +1,5 @@
 import "dotenv/config";
+import "./settings-store"; // saved dashboard settings override .env
 import { parseArgs } from "node:util";
 import cron from "node-cron";
 import { loadCriteria } from "./criteria";
