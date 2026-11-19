@@ -1,0 +1,10 @@
+node_modules
+dist
+.next
+state
+data
+*.har
+sources.yaml
+*.tsbuildinfo
+next-env.d.ts
+package-lock.json

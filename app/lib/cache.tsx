@@ -1,15 +1,21 @@
-"use client";
+'use client';
 /**
  * Stale-while-revalidate cache for the whole dashboard (SWR).
  * - Every GET is cached in memory and persisted to localStorage, so pages render instantly with the
  *   last known data (also after a reload) and refresh quietly in the background.
  * - Heavy/private entries (single resumes, reports) stay in memory only.
  */
-import { useEffect, useState } from "react";
-import useSWR, { SWRConfig, mutate as globalMutate, useSWRConfig, type ScopedMutator, type SWRConfiguration } from "swr";
-import { api } from "./api";
+import { useEffect, useState } from 'react';
+import useSWR, {
+  SWRConfig,
+  mutate as globalMutate,
+  useSWRConfig,
+  type ScopedMutator,
+  type SWRConfiguration,
+} from 'swr';
+import { api } from './api';
 
-const STORAGE_KEY = "ats-cache-v1";
+const STORAGE_KEY = 'ats-cache-v1';
 const MEMORY_ONLY = /(\/applications\/|report|^sources$)/;
 
 let cache: Map<string, any> | null = null;
@@ -17,7 +23,7 @@ function provider() {
   if (cache) return cache;
   cache = new Map();
   try {
-    const saved: [string, unknown][] = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
+    const saved: [string, unknown][] = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
     for (const [k, data] of saved) cache.set(k, { data });
   } catch {
     /* empty or blocked storage */
@@ -25,15 +31,24 @@ function provider() {
   const save = () => {
     try {
       const entries = [...cache!.entries()]
-        .filter(([k, v]) => typeof k === "string" && !k.startsWith("$") && !MEMORY_ONLY.test(k) && v?.data !== undefined)
+        .filter(
+          ([k, v]) =>
+            typeof k === 'string' &&
+            !k.startsWith('$') &&
+            !MEMORY_ONLY.test(k) &&
+            v?.data !== undefined,
+        )
         .map(([k, v]) => [k, v.data]);
       localStorage.setItem(STORAGE_KEY, JSON.stringify(entries.slice(-150)));
     } catch {
       /* quota or blocked storage */
     }
   };
-  window.addEventListener("beforeunload", save);
-  document.addEventListener("visibilitychange", () => document.visibilityState === "hidden" && save());
+  window.addEventListener('beforeunload', save);
+  document.addEventListener(
+    'visibilitychange',
+    () => document.visibilityState === 'hidden' && save(),
+  );
   setInterval(save, 10_000);
   return cache;
 }
@@ -76,12 +91,13 @@ function CaptureMutate() {
 }
 
 /** Update or revalidate cached data (same signature as SWR's mutate, bound to the dashboard cache). */
-export const mutate: ScopedMutator = ((...args: Parameters<ScopedMutator>) => (boundMutate ?? globalMutate)(...args)) as ScopedMutator;
+export const mutate: ScopedMutator = ((...args: Parameters<ScopedMutator>) =>
+  (boundMutate ?? globalMutate)(...args)) as ScopedMutator;
 
 /** Revalidate one key, or every key that starts with a prefix. */
 export function refresh(keyOrPrefix: string, prefix = false) {
   if (!prefix) return mutate(keyOrPrefix);
-  return mutate((k) => typeof k === "string" && k.startsWith(keyOrPrefix));
+  return mutate((k) => typeof k === 'string' && k.startsWith(keyOrPrefix));
 }
 
 /** Small "updating…" hint shown while cached data is being refreshed. */
