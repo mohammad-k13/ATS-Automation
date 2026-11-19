@@ -141,7 +141,7 @@ After=ats.service
 User=$APP_USER
 WorkingDirectory=$ROOT/current
 $APP_ENV
-ExecStart=$ROOT/current/node_modules/.bin/tsx src/cli.ts schedule
+ExecStart=$ROOT/current/node_modules/.bin/tsx core/cli.ts schedule
 Restart=always
 RestartSec=30
 
@@ -220,7 +220,7 @@ if ! grep -qs 'ATS_PASSWORD_HASH' "$DATA/.env" "$DATA/settings.json"; then
   fi
   GENERATED=0
   [ -z "$PASS" ] && { PASS=$(head -c 18 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | head -c 16); GENERATED=1; }
-  (cd "$ROOT/current" && ATS_NEW_PASSWORD="$PASS" runuser -u "$APP_USER" -- env HOME="$DATA" ./node_modules/.bin/tsx src/cli.ts passwd "$USER_NAME" >/dev/null)
+  (cd "$ROOT/current" && ATS_NEW_PASSWORD="$PASS" runuser -u "$APP_USER" -- env HOME="$DATA" ./node_modules/.bin/tsx core/cli.ts passwd "$USER_NAME" >/dev/null)
   systemctl restart ats
 fi
 

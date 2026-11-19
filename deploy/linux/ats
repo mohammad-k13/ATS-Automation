@@ -126,7 +126,7 @@ cmd_rollback() {
   ok "rolled back to $(basename "$prev" | cut -c1-7)"
 }
 
-run_cli() { (cd "$ROOT/current" && as_app env $(app_env) ./node_modules/.bin/tsx src/cli.ts "$@"); }
+run_cli() { (cd "$ROOT/current" && as_app env $(app_env) ./node_modules/.bin/tsx core/cli.ts "$@"); }
 
 case "${1:-status}" in
   status)
