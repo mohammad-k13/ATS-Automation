@@ -15,6 +15,7 @@
     "schedule": "tsx core/cli.ts schedule",
     "build": "next build",
     "typecheck": "tsc --noEmit",
+    "check": "npm run typecheck && npm test",
     "test": "tsx --test test/*.test.ts",
     "dashboard": "next dev",
     "dev": "next dev",
