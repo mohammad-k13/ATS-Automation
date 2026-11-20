@@ -4,16 +4,16 @@ Read this once. It is short on purpose.
 
 ## The one rule that shapes everything
 
-**`main` is production.** Servers pull `main` every 30 minutes and update themselves. So nobody pushes to `main` directly: everything goes through a pull request that passes CI (types, tests, build).
+**`main` is production.** Servers pull `main` every 30 minutes and update themselves. **Day-to-day work happens on `dev`**: branch from `dev`, open pull requests into `dev`, and nobody touches `main` except the owner. A release is one pull request `dev` → `main` (squash is not used for it, so history stays readable). CI (format, types, tests, build) must pass on both.
 
 ## Daily flow
 
 1. **Pick a task** in ClickUp (see [docs/team-workflow.md](docs/team-workflow.md)) and move it to _In progress_.
-2. **Branch from `main`**: `git switch -c <type>/<short-name>` — types: `feat`, `fix`, `docs`, `chore`, `refactor`, `test`. Example: `fix/attachment-401`.
+2. **Branch from `dev`**: `git switch -c <type>/<short-name>` — types: `feat`, `fix`, `docs`, `chore`, `refactor`, `test`. Example: `fix/attachment-401`.
 3. **Commit small**, with a message that says why: `fix: download attached resume with the sign-in cookie`.
 4. **Check locally**: `npm run check` (types + tests). For UI changes also run `npm run dev` and look at the page in light and dark mode.
 5. **Open a pull request** (the template asks the right questions). Put the ClickUp link in it. Move the task to _In review_.
-6. **One review**, then **Squash and merge**. Delete the branch. Task → _Done_ once it is live on the server (`ats version` shows the new commit).
+6. **One review**, then **Squash and merge**. Delete the branch. Merging into `dev` does not change any server. Task → _Ready to deploy_ once it is on `dev`, and _Done_ once the release PR to `main` is live on the server (`ats version` shows the new commit).
 
 Keep PRs small (a day of work or less). A big change is several PRs behind a setting, not one huge one.
 
@@ -62,7 +62,7 @@ If a secret was committed, rotate it first, then tell the owner. Removing it fro
 
 ## Releasing and rolling back
 
-Merging to `main` is releasing. The server builds the new version next to the old one, health-checks it, and rolls back by itself if it does not start. To go back manually: `sudo ats rollback`; then revert the PR on GitHub so `main` matches.
+Merging `dev` into `main` is releasing; merging into `dev` is not. The server builds the new version next to the old one, health-checks it, and rolls back by itself if it does not start. To go back manually: `sudo ats rollback`; then revert the PR on GitHub so `main` matches.
 
 ## Who decides
 
