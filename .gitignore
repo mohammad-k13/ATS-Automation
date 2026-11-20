@@ -8,3 +8,4 @@ sources.yaml
 
 .next/
 next-env.d.ts
+*.tsbuildinfo

@@ -28,6 +28,7 @@ sudo ats update-omniroute
 ```
 
 ## Working as a team
+
 See [CONTRIBUTING.md](CONTRIBUTING.md) (branches, pull requests, rules), [docs/architecture.md](docs/architecture.md) (where things are) and [docs/team-workflow.md](docs/team-workflow.md) (ClickUp + GitHub).
 
 ## Setup for development (Windows / Linux, Node 22.13+)

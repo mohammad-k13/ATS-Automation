@@ -1,8 +1,8 @@
 # Reviewers are requested automatically. Last matching line wins.
-*                      @mohammad-k13
+*                                  @mohammad-k13
 
 # Things that can leak data or break every server on the next update
-/deploy/               @mohammad-k13
-/src/auth/             @mohammad-k13
-/src/settings-store.ts @mohammad-k13
-/.github/              @mohammad-k13
+/deploy/                           @mohammad-k13
+/core/ats/infra/auth/              @mohammad-k13
+/core/platform/                    @mohammad-k13
+/.github/                          @mohammad-k13

@@ -138,7 +138,8 @@ export class Db {
 
   getKv<T>(key: string): { value: T; updatedAt: string } | null {
     const r = this.db.prepare('SELECT json, updated_at FROM kv WHERE key=?').get(key) as
-      { json: string; updated_at: string } | undefined;
+      | { json: string; updated_at: string }
+      | undefined;
     return r ? { value: JSON.parse(r.json) as T, updatedAt: r.updated_at } : null;
   }
   setKv(key: string, value: unknown) {
@@ -260,7 +261,8 @@ export class Db {
   }
   getThread(id: string): ThreadRow | undefined {
     return this.db.prepare('SELECT * FROM chat_threads WHERE id=?').get(id) as
-      ThreadRow | undefined;
+      | ThreadRow
+      | undefined;
   }
   createThread(source: string, jobId: string, title: string, messages: unknown[] = []): ThreadRow {
     const id = randomUUID();
@@ -313,7 +315,8 @@ export class Db {
 
   get(source: string, id: string): Row | undefined {
     return this.db.prepare('SELECT * FROM applications WHERE source=? AND id=?').get(source, id) as
-      Row | undefined;
+      | Row
+      | undefined;
   }
 
   /** Done = accepted/rejected, or errored too many times. */

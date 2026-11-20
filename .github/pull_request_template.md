@@ -1,11 +1,14 @@
 ## What and why
+
 <!-- One or two sentences. Link the ClickUp task: https://app.clickup.com/t/... -->
 
 ## How to check it
+
 <!-- Steps a reviewer can follow, or the test that covers it. -->
 
 ## Checklist
-- [ ] `npm run check` passes (types + tests)
+
+- [ ] `npm run check` and `npm run format:check` pass
 - [ ] No tokens, cookies, passwords, HAR files or real candidate data in the diff
 - [ ] Phone numbers / personal data are not sent to the AI
 - [ ] Anything that writes to Jobvision (status change, reject) still asks for confirmation

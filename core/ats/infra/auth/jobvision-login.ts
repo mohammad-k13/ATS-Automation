@@ -290,7 +290,9 @@ export async function loginInBrowser<T = undefined>(
     if (submit) await submit.click();
     else await pass.press('Enter');
 
-    log(opts.show ? 'منتظر ورود… اگر کد یا کپچا خواست، در پنجرهٔ مرورگر وارد کنید.' : 'منتظر ورود…');
+    log(
+      opts.show ? 'منتظر ورود… اگر کد یا کپچا خواست، در پنجرهٔ مرورگر وارد کنید.' : 'منتظر ورود…',
+    );
     const end = Date.now() + timeout;
     while (!token && Date.now() < end) {
       token = await tokenFromStorage(page);
