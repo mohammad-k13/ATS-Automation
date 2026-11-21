@@ -14,7 +14,9 @@ test('saved settings keep every character (passwords with $ # quotes, line break
   const stored = JSON.parse(fs.readFileSync(path.join(dir, 'settings.json'), 'utf8'));
   assert.equal(stored.JOBVISION_PASSWORD, nasty);
   assert.equal(stored.ATS_PASSWORD_HASH, undefined, 'a line break must not create another setting');
-  assert.equal(fs.statSync(path.join(dir, 'settings.json')).mode & 0o777, 0o600);
+  // Windows has no Unix file modes (always reports 0o666); the check only means something elsewhere
+  if (process.platform !== 'win32')
+    assert.equal(fs.statSync(path.join(dir, 'settings.json')).mode & 0o777, 0o600);
   assert.throws(() => saveSetting('bad key', 'x'));
   fs.rmSync(dir, { recursive: true });
 });

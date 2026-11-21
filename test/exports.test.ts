@@ -81,7 +81,8 @@ test('xlsx file is valid (opened with python openpyxl when available)', () => {
       `import openpyxl,sys; ws=openpyxl.load_workbook(sys.argv[1]).active; print(ws.title, ws.sheet_view.rightToLeft, [[c.value for c in r] for r in ws.iter_rows()])`,
       file,
     ],
-    { encoding: 'utf8' },
+    // Python on Windows prints with cp1252 by default and cannot print Persian
+    { encoding: 'utf8', env: { ...process.env, PYTHONUTF8: '1', PYTHONIOENCODING: 'utf-8' } },
   );
   fs.unlinkSync(file);
   if (py.status !== 0 && /No module named/.test(py.stderr)) return; // openpyxl not installed
