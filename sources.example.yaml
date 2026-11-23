@@ -4,46 +4,46 @@
 # After editing, run:  npm run probe -- jobinja    to see the raw JSON and how fields map.
 
 sources:
-  - name: jobinja
-    type: http
-    enabled: false # set true once filled in
-    baseUrl: https://jobinja.ir
-    headers:
-      Cookie: '${JOBINJA_COOKIE}'
-      Authorization: '${JOBINJA_TOKEN}'
-      Accept: application/json
-      User-Agent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130 Safari/537.36'
-    delayMs: 1500 # pause between requests, keep it human-like
-    list:
-      url: '/REPLACE/with/the/applications/endpoint?page={page}'
-      method: GET
-      itemsPath: data # where the array of applicants is in the JSON (e.g. data.items)
-      maxPages: 3
-    fields: # dotted paths inside ONE applicant item
-      id: id
-      name: full_name
-      jobId: job.id
-      jobTitle: job.title
-      appliedAt: created_at
-      resumeUrl: resume_url # or use resumeUrlTemplate below
-      # resumeText: resume.text # if the API returns resume text inline
-      extra: {} # e.g. { city: city, expectedSalary: salary } - passed to the scorer
-    # resumeUrlTemplate: "/REPLACE/applications/{id}/resume"
-    # profileUrlTemplate: "https://jobinja.ir/REPLACE/applications/{id}"
+      - name: jobinja
+        type: http
+        enabled: false # set true once filled in
+        baseUrl: https://jobinja.ir
+        headers:
+              Cookie: '${JOBINJA_COOKIE}'
+              Authorization: '${JOBINJA_TOKEN}'
+              Accept: application/json
+              User-Agent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130 Safari/537.36'
+        delayMs: 1500 # pause between requests, keep it human-like
+        list:
+              url: '/REPLACE/with/the/applications/endpoint?page={page}'
+              method: GET
+              itemsPath: data # where the array of applicants is in the JSON (e.g. data.items)
+              maxPages: 3
+        fields: # dotted paths inside ONE applicant item
+              id: id
+              name: full_name
+              jobId: job.id
+              jobTitle: job.title
+              appliedAt: created_at
+              resumeUrl: resume_url # or use resumeUrlTemplate below
+              # resumeText: resume.text # if the API returns resume text inline
+              extra: {} # e.g. { city: city, expectedSalary: salary } - passed to the scorer
+        # resumeUrlTemplate: "/REPLACE/applications/{id}/resume"
+        # profileUrlTemplate: "https://jobinja.ir/REPLACE/applications/{id}"
 
-  # Jobvision employer panel - built-in flow, just set the token and your job post ids.
-  # Job post id is in the panel URL: employer.jobvision.ir/jobs/<ID>/applications
-  - name: jobvision
-    type: jobvision
-    enabled: true
-    token: '${JOBVISION_TOKEN}' # Authorization header value from DevTools (expires every ~6h)
-    jobPostIds: [1606152]
-    status: 10 # 10 = undecided applicants only
-    maxPerJob: 200
-    delayMs: 1200
+      # Jobvision employer panel - built-in flow, just set the token and your job post ids.
+      # Job post id is in the panel URL: employer.jobvision.ir/jobs/<ID>/applications
+      - name: jobvision
+        type: jobvision
+        enabled: true
+        token: '${JOBVISION_TOKEN}' # Authorization header value from DevTools (expires every ~6h)
+        jobPostIds: [1606152]
+        status: 10 # 10 = undecided applicants only
+        maxPerJob: 200
+        delayMs: 1200
 
-  # Local test source: test/samples/<job title>/<resume>.pdf|docx|txt
-  - name: samples
-    type: folder
-    enabled: false
-    dir: test/samples
+      # Local test source: test/samples/<job title>/<resume>.pdf|docx|txt
+      - name: samples
+        type: folder
+        enabled: false
+        dir: test/samples
