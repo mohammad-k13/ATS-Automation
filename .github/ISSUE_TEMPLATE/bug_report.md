@@ -50,6 +50,11 @@ Derive inputs, actions, and expected results from the report, not from the imple
 1. Given ..., when ..., then ...
 2. Regression: Given ..., when ..., then ...
 
+## Delivery evidence
+
+Record the test agent's scenarios and actual results, the independent review findings,
+CI status, and the owner's acceptance decision. Link the task pull request.
+
 ## Privacy and security
 
 Describe any access or data exposure impact. Remove tokens, cookies, and personal data
