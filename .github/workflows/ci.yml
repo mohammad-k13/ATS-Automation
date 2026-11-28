@@ -29,3 +29,20 @@ jobs:
       # main is what the server deploys (auto-update every 30 min): a broken build must never reach it
       - name: Build
         run: npm run build
+
+  pr-policy:
+    name: PR policy
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Check route and size
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/check-pr-policy.mjs
