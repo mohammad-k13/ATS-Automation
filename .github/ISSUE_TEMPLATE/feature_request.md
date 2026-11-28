@@ -1,17 +1,49 @@
 ---
 name: Feature request
-about: An idea or a change to how the tool works
+about: Propose one independently reviewable product change
 labels: enhancement
 ---
 
-## Who needs it and why
+## Product objective
 
-<!-- The problem in the recruiter's words, not the solution. -->
+Who needs this, what problem do they face, and what outcome should change?
 
-## What should happen
+## Scope
 
-<!-- Rough behaviour. Screens or an example output help. -->
+Describe one task for a small pull request. Link related work that needs a separate issue.
 
-## Done when
+## User experience
 
-- [ ]
+Describe the user flow, visible states, Persian RTL behavior, and accessibility needs.
+For new or redesigned UI, identify the shadcn/ui components.
+
+## Technical brief
+
+State expected behavior, affected components or interfaces, data changes, and constraints.
+Mark unverified implementation ideas as proposals.
+
+## Dependencies
+
+List prerequisite issues, services, designs, or decisions. Write "None" if there are none.
+
+## Acceptance criteria
+
+- [ ] State a concrete, observable condition for the primary flow.
+- [ ] State relevant edge cases or failure behavior.
+
+## Independent test scenarios
+
+Write inputs, actions, and expected results from this brief, before examining implementation.
+
+1. Given ..., when ..., then ...
+2. Given ..., when ..., then ...
+
+## Delivery evidence
+
+Record the test agent's scenarios and actual results, the independent review findings,
+CI status, and the owner's acceptance decision. Link the task pull request.
+
+## Privacy and security
+
+Describe affected personal data and access boundaries. Use sanitized examples only;
+never include credentials, tokens, or real candidate data.
