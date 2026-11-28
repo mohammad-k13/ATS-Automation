@@ -5,7 +5,11 @@
 Build a commercially ready, self-hosted recruitment platform that is intuitive, secure, reliable, and easy to integrate. Keep the interface Persian-first and RTL.
 
 - Use shadcn/ui for all new or redesigned UI. Reuse shared components and preserve accessible keyboard behavior.
-- Keep product planning in ClickUp and engineering work, acceptance criteria, and delivery tracking in GitHub Issues and Projects.
+- Keep product planning in ClickUp. Use GitHub Issues as
+  the primary source of truth for engineering tasks,
+  acceptance criteria, dependencies, and progress.
+  GitHub Projects is optional and must not block development.
+- Target the commercial v1.0 release by December 18, 2026.
 - Never expose credentials, cookies, or real candidate data in code, logs, tests, issues, or pull requests.
 - Keep human acceptance and merge authority with the repository owner. Never merge or enable auto-merge without explicit approval.
 
