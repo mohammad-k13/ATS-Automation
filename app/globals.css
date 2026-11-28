@@ -1,3 +1,22 @@
+@layer theme, base, components, utilities;
+@import 'tailwindcss/theme.css' layer(theme);
+@import 'tailwindcss/utilities.css' layer(utilities);
+
+@theme inline {
+  --color-background: var(--bg);
+  --color-foreground: var(--text);
+  --color-primary: var(--accent);
+  --color-primary-foreground: var(--on-accent);
+  --color-secondary: var(--panel);
+  --color-secondary-foreground: var(--text);
+  --color-accent: var(--accent-soft);
+  --color-accent-foreground: var(--accent);
+  --color-destructive: var(--bad);
+  --color-destructive-foreground: #ffffff;
+  --color-input: var(--line-strong);
+  --color-ring: var(--accent);
+}
+
 @font-face {
   font-family: 'Vazirmatn';
   src:
