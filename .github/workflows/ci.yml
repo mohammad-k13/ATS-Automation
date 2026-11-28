@@ -42,6 +42,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      - name: Policy examples
+        run: node --test test/pr-policy.test.mjs
       - name: Check route and size
         env:
           GITHUB_TOKEN: ${{ github.token }}
