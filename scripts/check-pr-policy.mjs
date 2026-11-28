@@ -25,23 +25,26 @@ export function evaluatePolicy({ head, base, changed, ownerException = false, au
   return { error: null, warning };
 }
 
-async function ownerApproved(event) {
+export async function ownerApproved(event, request = fetch) {
   const pr = event.pull_request;
   if (!pr.labels?.some(({ name }) => name === 'policy:oversize-approved')) return false;
   const owner = event.repository.owner.login.toLowerCase();
-  if (pr.user.login.toLowerCase() === owner) return false;
-  const url = `https://api.github.com/repos/${event.repository.full_name}/pulls/${pr.number}/reviews?per_page=100`;
-  const response = await fetch(url, {
-    headers: {
-      Accept: 'application/vnd.github+json',
-      Authorization: `Bearer ${process.env.GITHUB_TOKEN}`,
-      'X-GitHub-Api-Version': '2022-11-28',
-    },
-  });
-  if (!response.ok) throw new Error(`Unable to verify owner review: HTTP ${response.status}`);
-  const reviews = await response.json();
-  const latest = reviews.filter((review) => review.user?.login?.toLowerCase() === owner).at(-1);
-  return latest?.state === 'APPROVED' && latest.commit_id === pr.head.sha;
+  const marker = `SIZE_EXCEPTION_APPROVED ${pr.head.sha}`;
+  for (let page = 1; ; page++) {
+    const url = `https://api.github.com/repos/${event.repository.full_name}/issues/${pr.number}/comments?per_page=100&page=${page}`;
+    const response = await request(url, {
+      headers: {
+        Accept: 'application/vnd.github+json',
+        Authorization: `Bearer ${process.env.GITHUB_TOKEN}`,
+        'X-GitHub-Api-Version': '2022-11-28',
+      },
+    });
+    if (!response.ok) throw new Error(`Unable to verify owner comment: HTTP ${response.status}`);
+    const comments = await response.json();
+    if (comments.some((comment) =>
+      comment.user?.login?.toLowerCase() === owner && comment.body?.trim() === marker)) return true;
+    if (comments.length < 100) return false;
+  }
 }
 
 if (process.env.GITHUB_EVENT_PATH) {
