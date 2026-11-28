@@ -29,12 +29,12 @@
 
 <!-- Record only checks actually run. Use "not run" with a reason if needed. -->
 
-| Check | Command or run link | Result | Notes |
-| --- | --- | --- | --- |
-| `npm run check` | | | |
-| `npm run format:check` | | | |
-| Relevant tests | | | |
-| GitHub CI | | | |
+| Check                  | Command or run link | Result | Notes |
+| ---------------------- | ------------------- | ------ | ----- |
+| `npm run check`        |                     |        |       |
+| `npm run format:check` |                     |        |       |
+| Relevant tests         |                     |        |       |
+| GitHub CI              |                     |        |       |
 
 ## Independent agent evidence
 
@@ -46,6 +46,8 @@
 - Fixes and re-review:
 
 ## Checklist
+
+- [ ] npm run check and npm run format:check pass
 
 - [ ] No tokens, cookies, passwords, HAR files or real candidate data in the diff
 - [ ] Phone numbers / personal data are not sent to the AI
