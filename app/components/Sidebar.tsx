@@ -1,7 +1,9 @@
 'use client';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
+import { Menu, X } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 import { platformName, type Status } from '../lib/api';
 import { refresh, useApi } from '../lib/cache';
 
@@ -18,6 +20,7 @@ export function tokenState(t: Status['platforms'][number]['token']) {
 
 export default function Sidebar() {
   const path = usePathname();
+  const [open, setOpen] = useState(false);
   const onLogin = path.startsWith('/login');
   const { data: st } = useApi<Status>(onLogin ? null : 'status', { refreshInterval: 60_000 });
   useEffect(() => {
@@ -25,51 +28,79 @@ export default function Sidebar() {
     window.addEventListener('ats:status', load);
     return () => window.removeEventListener('ats:status', load);
   }, []);
+  useEffect(() => setOpen(false), [path]);
 
   if (onLogin) return null;
   return (
-    <nav className="sidebar">
-      <div className="logo">
-        <i />
-        سامانه جذب
-      </div>
-      <div className="nav-title">پلتفرم‌ها</div>
-      {st?.platforms.map((p) => {
-        const ts = tokenState(p.token);
-        return (
-          <Link
-            key={p.name}
-            href={`/p/${p.name}`}
-            className={`nav-item ${path.startsWith(`/p/${p.name}`) ? 'active' : ''}`}
-          >
-            <span>{platformName(p.name)}</span>
-            <span className="row small faint" title={`توکن: ${ts.label}`}>
-              <span className={`dot ${ts.cls}`} />
-            </span>
-          </Link>
-        );
-      })}
-      {st && !st.platforms.length && (
-        <div className="small faint" style={{ padding: '0 10px' }}>
-          پلتفرمی فعال نیست
-        </div>
+    <>
+      <Button
+        className="mobile-nav-toggle"
+        variant="outline"
+        size="icon"
+        aria-label={open ? 'بستن فهرست' : 'باز کردن فهرست'}
+        aria-expanded={open}
+        aria-controls="primary-navigation"
+        onClick={() => setOpen((value) => !value)}
+      >
+        {open ? <X aria-hidden /> : <Menu aria-hidden />}
+      </Button>
+      {open && (
+        <button
+          className="mobile-nav-backdrop"
+          aria-label="بستن فهرست"
+          onClick={() => setOpen(false)}
+        />
       )}
-      <div className="nav-title">ابزارها</div>
-      <Link href="/tasks" className={`nav-item ${path.startsWith('/tasks') ? 'active' : ''}`}>
-        <span>خروجی و گزارش</span>
-      </Link>
-      <div className="nav-title">تنظیمات</div>
-      <Link href="/settings" className={`nav-item ${path.startsWith('/settings') ? 'active' : ''}`}>
-        <span>تنظیمات و اتصال‌ها</span>
-      </Link>
-      <div className="bottom small faint" style={{ padding: '0 10px' }}>
-        {st &&
-          (st.ai.provider === 'keyword' ? (
-            <span className="badge warn">هوش مصنوعی خاموش</span>
-          ) : (
-            <span className="ltr">AI · {st.ai.model}</span>
-          ))}
-      </div>
-    </nav>
+      <nav
+        id="primary-navigation"
+        aria-label="ناوبری اصلی"
+        className={`sidebar ${open ? 'is-open' : ''}`}
+      >
+        <div className="logo">
+          <i />
+          سامانه جذب
+        </div>
+        <div className="nav-title">پلتفرم‌ها</div>
+        {st?.platforms.map((p) => {
+          const ts = tokenState(p.token);
+          return (
+            <Link
+              key={p.name}
+              href={`/p/${p.name}`}
+              className={`nav-item ${path.startsWith(`/p/${p.name}`) ? 'active' : ''}`}
+            >
+              <span>{platformName(p.name)}</span>
+              <span className="row small faint" title={`توکن: ${ts.label}`}>
+                <span className={`dot ${ts.cls}`} />
+              </span>
+            </Link>
+          );
+        })}
+        {st && !st.platforms.length && (
+          <div className="small faint" style={{ padding: '0 10px' }}>
+            پلتفرمی فعال نیست
+          </div>
+        )}
+        <div className="nav-title">ابزارها</div>
+        <Link href="/tasks" className={`nav-item ${path.startsWith('/tasks') ? 'active' : ''}`}>
+          <span>خروجی و گزارش</span>
+        </Link>
+        <div className="nav-title">تنظیمات</div>
+        <Link
+          href="/settings"
+          className={`nav-item ${path.startsWith('/settings') ? 'active' : ''}`}
+        >
+          <span>تنظیمات و اتصال‌ها</span>
+        </Link>
+        <div className="bottom small faint" style={{ padding: '0 10px' }}>
+          {st &&
+            (st.ai.provider === 'keyword' ? (
+              <span className="badge warn">هوش مصنوعی خاموش</span>
+            ) : (
+              <span className="ltr">AI · {st.ai.model}</span>
+            ))}
+        </div>
+      </nav>
+    </>
   );
 }
