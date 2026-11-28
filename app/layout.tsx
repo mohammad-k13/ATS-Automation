@@ -3,6 +3,7 @@ import './globals.css';
 import Header from './components/Header';
 import Sidebar from './components/Sidebar';
 import { CacheProvider } from './lib/cache';
+import { Button } from '@/components/ui/button';
 
 export const metadata: Metadata = { title: 'سامانه جذب', description: 'غربالگری هوشمند رزومه‌ها' };
 
