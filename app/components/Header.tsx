@@ -2,6 +2,8 @@
 import Link from 'next/link';
 import { useParams, usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useEffect, useState } from 'react';
+import { ArrowRight, LogOut, Moon, Sun } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 import { platformName } from '../lib/api';
 import { useApi } from '../lib/cache';
 
@@ -77,15 +79,17 @@ function ThemeToggle() {
     }
   };
   return (
-    <button
-      className="btn sm theme-btn"
+    <Button
+      variant="outline"
+      size="sm"
+      className="theme-btn"
       onClick={flip}
       title="تغییر حالت نمایش"
       aria-label="تغییر حالت نمایش"
     >
-      <span aria-hidden>{theme === 'dark' ? '☀' : '☾'}</span>
+      {theme === 'dark' ? <Sun aria-hidden /> : <Moon aria-hidden />}
       <span className="l">{theme === 'dark' ? 'حالت روشن' : 'حالت تیره'}</span>
-    </button>
+    </Button>
   );
 }
 
@@ -104,9 +108,9 @@ function Logout() {
     location.href = '/login';
   };
   return (
-    <button className="btn sm ghost" onClick={out} title={me.data.user}>
-      خروج ({me.data.user})
-    </button>
+    <Button variant="ghost" size="sm" onClick={out} title={me.data.user}>
+      <LogOut aria-hidden /> خروج ({me.data.user})
+    </Button>
   );
 }
 
@@ -123,9 +127,16 @@ function HeaderInner() {
   return (
     <header className="app-header">
       {canGoBack && (
-        <button className="back" onClick={back} aria-label="بازگشت" title="بازگشت">
-          →
-        </button>
+        <Button
+          variant="outline"
+          size="icon"
+          className="back"
+          onClick={back}
+          aria-label="بازگشت"
+          title="بازگشت"
+        >
+          <ArrowRight aria-hidden />
+        </Button>
       )}
       <nav className="crumbs grow" aria-label="مسیر">
         {crumbs.map((c, i) => (
