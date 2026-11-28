@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { evaluatePolicy } from '../scripts/check-pr-policy.mjs';
+import { evaluatePolicy, ownerApproved } from '../scripts/check-pr-policy.mjs';
 
 const check = (head, base, changed, options = {}) =>
   evaluatePolicy({ head, base, changed, ...options });
@@ -39,4 +39,32 @@ test('warns outside the target and rejects malformed data', () => {
     assert.ok(check('task/a', 'feature/a', changed).error);
   }
   assert.ok(check(null, 'feature/a', 100).error);
+});
+
+test('requires a current-head owner comment and paginates comments', async () => {
+  const event = {
+    repository: { full_name: 'owner/repo', owner: { login: 'owner' } },
+    pull_request: {
+      number: 1, head: { sha: 'abc123' },
+      labels: [{ name: 'policy:oversize-approved' }],
+    },
+  };
+  const comments = Array.from({ length: 100 }, () => ({
+    user: { login: 'someone' }, body: 'other',
+  }));
+  const requests = [];
+  const request = async (url) => {
+    requests.push(url);
+    return { ok: true, json: async () => requests.length === 1
+      ? comments
+      : [{ user: { login: 'owner' }, body: 'SIZE_EXCEPTION_APPROVED abc123' }] };
+  };
+  assert.equal(await ownerApproved(event, request), true);
+  assert.equal(requests.length, 2);
+  assert.equal(await ownerApproved(event, async () => ({
+    ok: true, json: async () => [{ user: { login: 'owner' },
+      body: 'SIZE_EXCEPTION_APPROVED stale' }],
+  })), false);
+  event.pull_request.labels = [];
+  assert.equal(await ownerApproved(event, request), false);
 });
