@@ -5,5 +5,5 @@ mustHave: []
 niceToHave: []
 hardFilters: {}
 instructions: |
-  General screening: reward relevant experience for the job title, clear measurable achievements,
-  and stable employment history. Penalize resumes unrelated to the job title.
+    General screening: reward relevant experience for the job title, clear measurable achievements,
+    and stable employment history. Penalize resumes unrelated to the job title.

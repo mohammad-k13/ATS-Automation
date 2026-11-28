@@ -1,16 +1,16 @@
 # نگهبان (jobvision #1570803) - edited from the dashboard
 name: job-1570803
 match:
-  jobIds:
-    - '1570803'
+    jobIds:
+        - '1570803'
 threshold: 70
 mustHave: []
 niceToHave: []
 hardFilters:
-  requireAny: []
-  rejectIfAny: []
+    requireAny: []
+    rejectIfAny: []
 instructions: >
-  General screening: reward relevant experience for the job title, clear
-  measurable achievements,
+    General screening: reward relevant experience for the job title, clear
+    measurable achievements,
 
-  and stable employment history. Penalize resumes unrelated to the job title.
+    and stable employment history. Penalize resumes unrelated to the job title.

@@ -1,22 +1,22 @@
 import fs from 'node:fs';
 import {
-  authEnabled,
-  checkPassword,
-  clearCookie,
-  makeSession,
-  readSession,
-  sessionCookie,
+    authEnabled,
+    checkPassword,
+    clearCookie,
+    makeSession,
+    readSession,
+    sessionCookie,
 } from '@/core/platform/auth/session';
 import * as svc from '@/core/ats/application/index';
 import { AuthError } from '@/core/ats/infra/sources/http-source';
 
 /** Release id written by the installer/updater (git commit), "dev" when running from source. */
 const VERSION = (() => {
-  try {
-    return fs.readFileSync('VERSION', 'utf8').trim();
-  } catch {
-    return 'dev';
-  }
+    try {
+        return fs.readFileSync('VERSION', 'utf8').trim();
+    } catch {
+        return 'dev';
+    }
 })();
 
 export const runtime = 'nodejs';
@@ -27,289 +27,234 @@ type H = (p: Record<string, string>, body: any, query: URLSearchParams) => unkno
 
 // [method, pattern, handler]  — :name captures a segment
 const routes: [string, string, H][] = [
-  ['GET', 'status', () => svc.status()],
-  ['GET', 'sources', () => svc.readSourcesYaml()],
-  ['PUT', 'sources', (_, b) => svc.saveSourcesYaml(String(b?.text ?? ''))],
-  ['POST', 'platforms/:src/token', (p, b) => svc.setToken(p.src, String(b?.token ?? ''))],
-  [
-    'PUT',
-    'platforms/:src/credentials',
-    (p, b) =>
-      svc.setCredentials(
-        p.src,
-        String(b?.email ?? ''),
-        b?.password ? String(b.password) : undefined,
-      ),
-  ],
-  ['POST', 'platforms/:src/login', (p, b) => svc.loginNow(p.src, !!b?.show)],
-  ['POST', 'platforms/:src/diagnose/attachment', (p) => svc.diagnoseAttachmentDownload(p.src)],
-  ['POST', 'platforms/:src/remote-login', (p) => svc.remoteLogin.start(p.src)],
-  ['GET', 'platforms/:src/remote-login', (p) => svc.remoteLogin.status(p.src)],
-  [
-    'DELETE',
-    'platforms/:src/remote-login',
-    async (p) => (await svc.remoteLogin.cancel(p.src), { ok: true }),
-  ],
-  [
-    'GET',
-    'platforms/:src/remote-login/shot',
-    async (p) =>
-      new Response(new Uint8Array(await svc.remoteLogin.shot(p.src)), {
-        headers: { 'content-type': 'image/jpeg', 'cache-control': 'no-store' },
-      }),
-  ],
-  [
-    'POST',
-    'platforms/:src/remote-login/click',
-    async (p, b) => (await svc.remoteLogin.click(p.src, Number(b?.x), Number(b?.y)), { ok: true }),
-  ],
-  [
-    'POST',
-    'platforms/:src/remote-login/type',
-    async (p, b) => (await svc.remoteLogin.type(p.src, b?.text ?? ''), { ok: true }),
-  ],
-  [
-    'POST',
-    'platforms/:src/remote-login/key',
-    async (p, b) => (await svc.remoteLogin.key(p.src, String(b?.key)), { ok: true }),
-  ],
-  [
-    'GET',
-    'debug/login-shot',
-    () =>
-      new Response(new Uint8Array(svc.loginScreenshot()), {
-        headers: { 'content-type': 'image/png', 'cache-control': 'no-store' },
-      }),
-  ],
-  ['GET', 'platforms/:src/jobs', (p, _b, q) => svc.listJobs(p.src, q.get('fresh') === '1')],
-  ['GET', 'platforms/:src/jobs/:id/settings', (p) => svc.getJobSettings(p.src, p.id)],
-  [
-    'PUT',
-    'platforms/:src/jobs/:id/criteria',
-    (p, b) => svc.saveJobCriteria(p.src, p.id, b?.criteria, b?.jobTitle),
-  ],
-  [
-    'POST',
-    'platforms/:src/jobs/:id/criteria/draft',
-    (p, b) =>
-      svc.draftCriteria(
-        p.src,
-        p.id,
-        String(b?.jobTitle ?? ''),
-        String(b?.description ?? ''),
-        b?.current ?? null,
-      ),
-  ],
-  [
-    'PUT',
-    'platforms/:src/jobs/:id/description',
-    (p, b) => svc.saveJobDescription(p.src, p.id, String(b?.description ?? '')),
-  ],
-  ['POST', 'platforms/:src/jobs/:id/ad', (p) => svc.fetchJobAd(p.src, p.id, true)],
-  [
-    'PUT',
-    'platforms/:src/jobs/:id/scheduled',
-    (p, b) => (svc.setJobScheduled(p.src, p.id, !!b?.on), svc.getJobSettings(p.src, p.id)),
-  ],
-  ['POST', 'platforms/:src/jobs/:id/refresh', (p) => svc.refreshApplications(p.src, p.id)],
-  ['GET', 'platforms/:src/jobs/:id/applications', (p) => svc.listApplications(p.src, p.id)],
-  [
-    'POST',
-    'platforms/:src/jobs/:id/score',
-    (p, b) => svc.startScoring(p.src, p.id, { ids: b?.ids, rescore: !!b?.rescore }),
-  ],
-  ['GET', 'platforms/:src/jobs/:id/task', (p) => svc.getTask(p.src, p.id)],
-  ['POST', 'platforms/:src/jobs/:id/score/cancel', (p) => svc.cancelScoring(p.src, p.id)],
-  ['GET', 'platforms/:src/jobs/:id/threads', (p) => svc.listThreads(p.src, p.id)],
-  ['POST', 'platforms/:src/jobs/:id/threads', (p, b) => svc.createThread(p.src, p.id, b?.title)],
-  ['GET', 'platforms/:src/jobs/:id/threads/:tid', (p) => svc.getThread(p.src, p.id, p.tid)],
-  [
-    'PUT',
-    'platforms/:src/jobs/:id/threads/:tid',
-    (p, b) => svc.renameThread(p.src, p.id, p.tid, String(b?.title ?? '')),
-  ],
-  ['DELETE', 'platforms/:src/jobs/:id/threads/:tid', (p) => svc.deleteThread(p.src, p.id, p.tid)],
-  [
-    'POST',
-    'platforms/:src/jobs/:id/chat',
-    (p, b) =>
-      svc.chatInThread(
-        p.src,
-        p.id,
-        b?.threadId ?? null,
-        String(b?.message ?? ''),
-        b?.focusIds ?? [],
-      ),
-  ],
-  ['GET', 'platforms/:src/applications/:id', (p) => svc.getApplication(p.src, p.id)],
-  [
-    'PUT',
-    'platforms/:src/jobs/:id/unit',
-    (p, b) => svc.setJobUnit(p.src, p.id, String(b?.unit ?? '')),
-  ],
-  [
-    'GET',
-    'platforms/:src/report',
-    (p, _b, q) =>
-      svc.report(p.src, {
-        jobId: q.get('job') ?? undefined,
-        status: q.get('status') ?? undefined,
-        ids: q.get('ids') ?? undefined,
-      }),
-  ],
-  [
-    'POST',
-    'platforms/:src/jobs/:id/zip',
-    (p, b) => svc.startZip(p.src, p.id, { ids: b?.ids, decisions: b?.decisions }),
-  ],
-  ['GET', 'platforms/:src/jobs/:id/zip', (p) => svc.getZipTask(p.src, p.id)],
-  [
-    'GET',
-    'files/zip/:token',
-    async (p, _b, q) =>
-      fileResponse(await svc.zipFile(p.token), q.get('name') || 'resumes.zip', 'application/zip'),
-  ],
-  [
-    'GET',
-    'platforms/:src/applications/:id/file/:kind',
-    async (p) => {
-      const f = await svc.candidateFile(
-        p.src,
-        p.id,
-        p.kind === 'attached' ? 'attached' : 'jobvision',
-      );
-      return fileResponse(
-        f.data,
-        f.name,
-        f.name.endsWith('.pdf') ? 'application/pdf' : 'application/octet-stream',
-      );
-    },
-  ],
-  [
-    'POST',
-    'platforms/:src/jobs/:id/reject',
-    (p, b) => svc.rejectOnSite(p.src, p.id, (b?.ids ?? []).map(String)),
-  ],
-  ['PUT', 'platforms/:src/jobs/:id/status-map', (p, b) => svc.saveStatusMap(p.src, p.id, b ?? {})],
-  [
-    'POST',
-    'platforms/:src/jobs/:id/site-status/preview',
-    (p, b) => svc.previewSiteStatuses(p.src, p.id, b?.ids),
-  ],
-  [
-    'POST',
-    'platforms/:src/jobs/:id/site-status/apply',
-    (p, b) => svc.applySiteStatuses(p.src, p.id, b?.ids),
-  ],
-  [
-    'POST',
-    'platforms/:src/tasks/plan',
-    (p, b) => svc.planTask(p.src, String(b?.instruction ?? ''), b?.previous),
-  ],
-  ['POST', 'platforms/:src/tasks/preview', (p, b) => svc.previewTask(p.src, b?.plan)],
-  ['POST', 'platforms/:src/tasks/run', (p, b) => svc.runTask(p.src, b?.plan)],
-  ['GET', 'platforms/:src/tasks', (p) => svc.listSavedTasks(p.src)],
-  ['POST', 'platforms/:src/tasks', (_, b) => svc.saveTask(b ?? {})],
-  ['DELETE', 'platforms/:src/tasks/:tid', (p) => svc.deleteTask(p.tid)],
-  ['POST', 'platforms/:src/tasks/:tid/run', (p) => svc.runSavedTask(p.src, p.tid)],
-  [
-    'GET',
-    'files/task/:token',
-    async (p, _b, q) => {
-      const name = q.get('name') || 'export.xlsx';
-      const f = await svc.taskFile(p.token, name);
-      return fileResponse(f.data, name, f.type);
-    },
-  ],
-  ['GET', 'gsheet', () => svc.getSheetSettings()],
-  ['PUT', 'gsheet', (_, b) => svc.saveSheetSettings(b ?? {})],
-  ['POST', 'gsheet/test', (_, b) => svc.testSheet(b ?? {})],
-  ['POST', 'gsheet/mapping/suggest', () => svc.suggestSheetMapping()],
-  ['POST', 'gsheet/rule', (_, b) => svc.sheetRuleFromText(String(b?.text ?? ''))],
-  ['POST', 'platforms/:src/gsheet/preview', (p, b) => svc.previewSheet(p.src, b?.jobId)],
-  ['POST', 'platforms/:src/gsheet/sync', (p, b) => svc.syncSheet(p.src, b?.jobId)],
-  ['GET', 'integrations', () => svc.getIntegrations()],
-  ['PUT', 'integrations/ai', (_, b) => svc.saveAiSettings(b ?? {})],
-  ['POST', 'integrations/ai/models', (_, b) => svc.listAiModels(b ?? {})],
-  ['POST', 'integrations/ai/test', () => svc.testAi()],
-  ['PUT', 'integrations/telegram', (_, b) => svc.saveTelegramSettings(b ?? {})],
-  ['POST', 'integrations/telegram/test', () => svc.testTelegram()],
+    ['GET', 'status', () => svc.status()],
+    ['GET', 'sources', () => svc.readSourcesYaml()],
+    ['PUT', 'sources', (_, b) => svc.saveSourcesYaml(String(b?.text ?? ''))],
+    ['POST', 'platforms/:src/token', (p, b) => svc.setToken(p.src, String(b?.token ?? ''))],
+    [
+        'PUT',
+        'platforms/:src/credentials',
+        (p, b) => svc.setCredentials(p.src, String(b?.email ?? ''), b?.password ? String(b.password) : undefined),
+    ],
+    ['POST', 'platforms/:src/login', (p, b) => svc.loginNow(p.src, !!b?.show)],
+    ['POST', 'platforms/:src/diagnose/attachment', (p) => svc.diagnoseAttachmentDownload(p.src)],
+    ['POST', 'platforms/:src/remote-login', (p) => svc.remoteLogin.start(p.src)],
+    ['GET', 'platforms/:src/remote-login', (p) => svc.remoteLogin.status(p.src)],
+    ['DELETE', 'platforms/:src/remote-login', async (p) => (await svc.remoteLogin.cancel(p.src), { ok: true })],
+    [
+        'GET',
+        'platforms/:src/remote-login/shot',
+        async (p) =>
+            new Response(new Uint8Array(await svc.remoteLogin.shot(p.src)), {
+                headers: { 'content-type': 'image/jpeg', 'cache-control': 'no-store' },
+            }),
+    ],
+    [
+        'POST',
+        'platforms/:src/remote-login/click',
+        async (p, b) => (await svc.remoteLogin.click(p.src, Number(b?.x), Number(b?.y)), { ok: true }),
+    ],
+    [
+        'POST',
+        'platforms/:src/remote-login/type',
+        async (p, b) => (await svc.remoteLogin.type(p.src, b?.text ?? ''), { ok: true }),
+    ],
+    [
+        'POST',
+        'platforms/:src/remote-login/key',
+        async (p, b) => (await svc.remoteLogin.key(p.src, String(b?.key)), { ok: true }),
+    ],
+    [
+        'GET',
+        'debug/login-shot',
+        () =>
+            new Response(new Uint8Array(svc.loginScreenshot()), {
+                headers: { 'content-type': 'image/png', 'cache-control': 'no-store' },
+            }),
+    ],
+    ['GET', 'platforms/:src/jobs', (p, _b, q) => svc.listJobs(p.src, q.get('fresh') === '1')],
+    ['GET', 'platforms/:src/jobs/:id/settings', (p) => svc.getJobSettings(p.src, p.id)],
+    ['PUT', 'platforms/:src/jobs/:id/criteria', (p, b) => svc.saveJobCriteria(p.src, p.id, b?.criteria, b?.jobTitle)],
+    [
+        'POST',
+        'platforms/:src/jobs/:id/criteria/draft',
+        (p, b) =>
+            svc.draftCriteria(p.src, p.id, String(b?.jobTitle ?? ''), String(b?.description ?? ''), b?.current ?? null),
+    ],
+    [
+        'PUT',
+        'platforms/:src/jobs/:id/description',
+        (p, b) => svc.saveJobDescription(p.src, p.id, String(b?.description ?? '')),
+    ],
+    ['POST', 'platforms/:src/jobs/:id/ad', (p) => svc.fetchJobAd(p.src, p.id, true)],
+    [
+        'PUT',
+        'platforms/:src/jobs/:id/scheduled',
+        (p, b) => (svc.setJobScheduled(p.src, p.id, !!b?.on), svc.getJobSettings(p.src, p.id)),
+    ],
+    ['POST', 'platforms/:src/jobs/:id/refresh', (p) => svc.refreshApplications(p.src, p.id)],
+    ['GET', 'platforms/:src/jobs/:id/applications', (p) => svc.listApplications(p.src, p.id)],
+    [
+        'POST',
+        'platforms/:src/jobs/:id/score',
+        (p, b) => svc.startScoring(p.src, p.id, { ids: b?.ids, rescore: !!b?.rescore }),
+    ],
+    ['GET', 'platforms/:src/jobs/:id/task', (p) => svc.getTask(p.src, p.id)],
+    ['POST', 'platforms/:src/jobs/:id/score/cancel', (p) => svc.cancelScoring(p.src, p.id)],
+    ['GET', 'platforms/:src/jobs/:id/threads', (p) => svc.listThreads(p.src, p.id)],
+    ['POST', 'platforms/:src/jobs/:id/threads', (p, b) => svc.createThread(p.src, p.id, b?.title)],
+    ['GET', 'platforms/:src/jobs/:id/threads/:tid', (p) => svc.getThread(p.src, p.id, p.tid)],
+    [
+        'PUT',
+        'platforms/:src/jobs/:id/threads/:tid',
+        (p, b) => svc.renameThread(p.src, p.id, p.tid, String(b?.title ?? '')),
+    ],
+    ['DELETE', 'platforms/:src/jobs/:id/threads/:tid', (p) => svc.deleteThread(p.src, p.id, p.tid)],
+    [
+        'POST',
+        'platforms/:src/jobs/:id/chat',
+        (p, b) => svc.chatInThread(p.src, p.id, b?.threadId ?? null, String(b?.message ?? ''), b?.focusIds ?? []),
+    ],
+    ['GET', 'platforms/:src/applications/:id', (p) => svc.getApplication(p.src, p.id)],
+    ['PUT', 'platforms/:src/jobs/:id/unit', (p, b) => svc.setJobUnit(p.src, p.id, String(b?.unit ?? ''))],
+    [
+        'GET',
+        'platforms/:src/report',
+        (p, _b, q) =>
+            svc.report(p.src, {
+                jobId: q.get('job') ?? undefined,
+                status: q.get('status') ?? undefined,
+                ids: q.get('ids') ?? undefined,
+            }),
+    ],
+    [
+        'POST',
+        'platforms/:src/jobs/:id/zip',
+        (p, b) => svc.startZip(p.src, p.id, { ids: b?.ids, decisions: b?.decisions }),
+    ],
+    ['GET', 'platforms/:src/jobs/:id/zip', (p) => svc.getZipTask(p.src, p.id)],
+    [
+        'GET',
+        'files/zip/:token',
+        async (p, _b, q) => fileResponse(await svc.zipFile(p.token), q.get('name') || 'resumes.zip', 'application/zip'),
+    ],
+    [
+        'GET',
+        'platforms/:src/applications/:id/file/:kind',
+        async (p) => {
+            const f = await svc.candidateFile(p.src, p.id, p.kind === 'attached' ? 'attached' : 'jobvision');
+            return fileResponse(
+                f.data,
+                f.name,
+                f.name.endsWith('.pdf') ? 'application/pdf' : 'application/octet-stream',
+            );
+        },
+    ],
+    ['POST', 'platforms/:src/jobs/:id/reject', (p, b) => svc.rejectOnSite(p.src, p.id, (b?.ids ?? []).map(String))],
+    ['PUT', 'platforms/:src/jobs/:id/status-map', (p, b) => svc.saveStatusMap(p.src, p.id, b ?? {})],
+    ['POST', 'platforms/:src/jobs/:id/site-status/preview', (p, b) => svc.previewSiteStatuses(p.src, p.id, b?.ids)],
+    ['POST', 'platforms/:src/jobs/:id/site-status/apply', (p, b) => svc.applySiteStatuses(p.src, p.id, b?.ids)],
+    ['POST', 'platforms/:src/tasks/plan', (p, b) => svc.planTask(p.src, String(b?.instruction ?? ''), b?.previous)],
+    ['POST', 'platforms/:src/tasks/preview', (p, b) => svc.previewTask(p.src, b?.plan)],
+    ['POST', 'platforms/:src/tasks/run', (p, b) => svc.runTask(p.src, b?.plan)],
+    ['GET', 'platforms/:src/tasks', (p) => svc.listSavedTasks(p.src)],
+    ['POST', 'platforms/:src/tasks', (_, b) => svc.saveTask(b ?? {})],
+    ['DELETE', 'platforms/:src/tasks/:tid', (p) => svc.deleteTask(p.tid)],
+    ['POST', 'platforms/:src/tasks/:tid/run', (p) => svc.runSavedTask(p.src, p.tid)],
+    [
+        'GET',
+        'files/task/:token',
+        async (p, _b, q) => {
+            const name = q.get('name') || 'export.xlsx';
+            const f = await svc.taskFile(p.token, name);
+            return fileResponse(f.data, name, f.type);
+        },
+    ],
+    ['GET', 'gsheet', () => svc.getSheetSettings()],
+    ['PUT', 'gsheet', (_, b) => svc.saveSheetSettings(b ?? {})],
+    ['POST', 'gsheet/test', (_, b) => svc.testSheet(b ?? {})],
+    ['POST', 'gsheet/mapping/suggest', () => svc.suggestSheetMapping()],
+    ['POST', 'gsheet/rule', (_, b) => svc.sheetRuleFromText(String(b?.text ?? ''))],
+    ['POST', 'platforms/:src/gsheet/preview', (p, b) => svc.previewSheet(p.src, b?.jobId)],
+    ['POST', 'platforms/:src/gsheet/sync', (p, b) => svc.syncSheet(p.src, b?.jobId)],
+    ['GET', 'integrations', () => svc.getIntegrations()],
+    ['PUT', 'integrations/ai', (_, b) => svc.saveAiSettings(b ?? {})],
+    ['POST', 'integrations/ai/models', (_, b) => svc.listAiModels(b ?? {})],
+    ['POST', 'integrations/ai/test', () => svc.testAi()],
+    ['PUT', 'integrations/telegram', (_, b) => svc.saveTelegramSettings(b ?? {})],
+    ['POST', 'integrations/telegram/test', () => svc.testTelegram()],
 ];
 
 /** Binary download with a UTF-8 file name. */
 function fileResponse(data: Uint8Array, name: string, type: string) {
-  const ascii = name.replace(/[^\x20-\x7e]+/g, '_').replace(/"/g, '');
-  return new Response(new Uint8Array(data), {
-    headers: {
-      'content-type': type,
-      'content-disposition': `attachment; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(name)}`,
-    },
-  });
+    const ascii = name.replace(/[^\x20-\x7e]+/g, '_').replace(/"/g, '');
+    return new Response(new Uint8Array(data), {
+        headers: {
+            'content-type': type,
+            'content-disposition': `attachment; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(name)}`,
+        },
+    });
 }
 
 function match(pattern: string, parts: string[]) {
-  const pp = pattern.split('/');
-  if (pp.length !== parts.length) return null;
-  const out: Record<string, string> = {};
-  for (let i = 0; i < pp.length; i++) {
-    if (pp[i].startsWith(':')) out[pp[i].slice(1)] = decodeURIComponent(parts[i]);
-    else if (pp[i] !== parts[i]) return null;
-  }
-  return out;
+    const pp = pattern.split('/');
+    if (pp.length !== parts.length) return null;
+    const out: Record<string, string> = {};
+    for (let i = 0; i < pp.length; i++) {
+        if (pp[i].startsWith(':')) out[pp[i].slice(1)] = decodeURIComponent(parts[i]);
+        else if (pp[i] !== parts[i]) return null;
+    }
+    return out;
 }
 
 async function handle(req: Request, ctx: Ctx) {
-  const { path } = await ctx.params;
-  const route = path.join('/');
-  try {
-    // ---- public endpoints
-    if (route === 'health')
-      return Response.json({ ok: true, version: VERSION, busy: svc.busyTasks() });
-    if (route === 'auth/me') {
-      const s = authEnabled() ? readSession(req.headers.get('cookie')) : null;
-      return Response.json({ enabled: authEnabled(), user: s?.user ?? null, version: VERSION });
-    }
-    if (route === 'auth/login' && req.method === 'POST') {
-      const b = await req.json().catch(() => ({}));
-      if (!authEnabled()) return Response.json({ ok: true });
-      await new Promise((r) => setTimeout(r, 400)); // slow down password guessing
-      if (!checkPassword(String(b?.user ?? ''), String(b?.password ?? '')))
-        return Response.json({ error: 'نام کاربری یا رمز عبور اشتباه است' }, { status: 401 });
-      const secure =
-        new URL(req.url).protocol === 'https:' || req.headers.get('x-forwarded-proto') === 'https';
-      return Response.json(
-        { ok: true },
-        { headers: { 'set-cookie': sessionCookie(makeSession(String(b.user).trim()), secure) } },
-      );
-    }
-    if (route === 'auth/logout')
-      return Response.json({ ok: true }, { headers: { 'set-cookie': clearCookie() } });
+    const { path } = await ctx.params;
+    const route = path.join('/');
+    try {
+        // ---- public endpoints
+        if (route === 'health') return Response.json({ ok: true, version: VERSION, busy: svc.busyTasks() });
+        if (route === 'auth/me') {
+            const s = authEnabled() ? readSession(req.headers.get('cookie')) : null;
+            return Response.json({ enabled: authEnabled(), user: s?.user ?? null, version: VERSION });
+        }
+        if (route === 'auth/login' && req.method === 'POST') {
+            const b = await req.json().catch(() => ({}));
+            if (!authEnabled()) return Response.json({ ok: true });
+            await new Promise((r) => setTimeout(r, 400)); // slow down password guessing
+            if (!checkPassword(String(b?.user ?? ''), String(b?.password ?? '')))
+                return Response.json({ error: 'نام کاربری یا رمز عبور اشتباه است' }, { status: 401 });
+            const secure = new URL(req.url).protocol === 'https:' || req.headers.get('x-forwarded-proto') === 'https';
+            return Response.json(
+                { ok: true },
+                { headers: { 'set-cookie': sessionCookie(makeSession(String(b.user).trim()), secure) } },
+            );
+        }
+        if (route === 'auth/logout') return Response.json({ ok: true }, { headers: { 'set-cookie': clearCookie() } });
 
-    // ---- everything else needs a session when login is enabled
-    if (authEnabled() && !readSession(req.headers.get('cookie')))
-      return Response.json({ error: 'لطفاً وارد شوید', login: true }, { status: 401 });
+        // ---- everything else needs a session when login is enabled
+        if (authEnabled() && !readSession(req.headers.get('cookie')))
+            return Response.json({ error: 'لطفاً وارد شوید', login: true }, { status: 401 });
 
-    const body =
-      req.method === 'GET' || req.method === 'DELETE' ? null : await req.json().catch(() => ({}));
-    for (const [m, pat, h] of routes) {
-      const p = m === req.method ? match(pat, path) : null;
-      if (p) {
-        const out = await h(p, body, new URL(req.url).searchParams);
-        return out instanceof Response ? out : Response.json(out ?? null);
-      }
+        const body = req.method === 'GET' || req.method === 'DELETE' ? null : await req.json().catch(() => ({}));
+        for (const [m, pat, h] of routes) {
+            const p = m === req.method ? match(pat, path) : null;
+            if (p) {
+                const out = await h(p, body, new URL(req.url).searchParams);
+                return out instanceof Response ? out : Response.json(out ?? null);
+            }
+        }
+        return Response.json({ error: 'not found' }, { status: 404 });
+    } catch (e) {
+        const status = e instanceof svc.UserError ? e.status : e instanceof AuthError ? 401 : 500;
+        const msg =
+            e instanceof AuthError
+                ? 'توکن منقضی یا نامعتبر است؛ از تنظیمات توکن جدید وارد کنید.'
+                : e instanceof Error
+                  ? e.message
+                  : String(e);
+        if (status === 500) console.error(e);
+        return Response.json({ error: msg }, { status });
     }
-    return Response.json({ error: 'not found' }, { status: 404 });
-  } catch (e) {
-    const status = e instanceof svc.UserError ? e.status : e instanceof AuthError ? 401 : 500;
-    const msg =
-      e instanceof AuthError
-        ? 'توکن منقضی یا نامعتبر است؛ از تنظیمات توکن جدید وارد کنید.'
-        : e instanceof Error
-          ? e.message
-          : String(e);
-    if (status === 500) console.error(e);
-    return Response.json({ error: msg }, { status });
-  }
 }
 
 export const GET = handle;

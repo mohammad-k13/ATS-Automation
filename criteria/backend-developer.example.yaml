@@ -1,17 +1,17 @@
 # One file per job. Rename to backend-developer.yaml to enable.
 name: backend-developer
 match:
-  jobIds: [] # exact job ids from the API, or:
-  titleIncludes: ['backend', 'بک اند', 'بک‌اند', 'node']
+    jobIds: [] # exact job ids from the API, or:
+    titleIncludes: ['backend', 'بک اند', 'بک‌اند', 'node']
 threshold: 70 # min score (0-100) to send to Telegram
 mustHave: [Node.js, TypeScript, PostgreSQL, REST API]
 niceToHave: [Docker, Redis, NestJS, Kubernetes, CI/CD]
 hardFilters:
-  minYears: 2 # uses experience the LLM extracts
-  requireAny: [] # at least one must appear in the resume text
-  rejectIfAny: [] # auto-reject if any appear
+    minYears: 2 # uses experience the LLM extracts
+    requireAny: [] # at least one must appear in the resume text
+    rejectIfAny: [] # auto-reject if any appear
 instructions: |
-  Mid-level backend role, Tehran, hybrid.
-  Prefer candidates who built and ran production services themselves (not only tutorials/courses).
-  Military service status should be completed or exempt for male applicants, if mentioned.
-  Must be able to read English technical documentation.
+    Mid-level backend role, Tehran, hybrid.
+    Prefer candidates who built and ran production services themselves (not only tutorials/courses).
+    Military service status should be completed or exempt for male applicants, if mentioned.
+    Must be able to read English technical documentation.
